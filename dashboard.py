@@ -1230,9 +1230,19 @@ function modelPriority(m) {
 
 function readURLModels(allModels) {
   const param = new URLSearchParams(window.location.search).get('models');
-  if (!param) return new Set(allModels.filter(m => isBillable(m)));
+  const billable = allModels.filter(m => isBillable(m));
+
+  // Default behavior: prioritize billable Claude models for cost visibility.
+  // If none exist, fall back to all models to avoid an empty dashboard.
+  if (!param) return new Set((billable.length ? billable : allModels));
+
+  // URL-pinned selection (models=...)
   const fromURL = new Set(param.split(',').map(s => s.trim()).filter(Boolean));
-  return new Set(allModels.filter(m => fromURL.has(m)));
+  const matched = allModels.filter(m => fromURL.has(m));
+  if (matched.length) return new Set(matched);
+
+  // If URL selection is stale (no matching models), gracefully fallback.
+  return new Set((billable.length ? billable : allModels));
 }
 
 function isDefaultModelSelection(allModels) {
