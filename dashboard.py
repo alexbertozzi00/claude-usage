@@ -12,18 +12,9 @@ from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
-FAVICON_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>
-<rect width='16' height='16' fill='#03050e'/>
-<rect x='3' y='4' width='10' height='7' fill='#d37756'/>
-<rect x='2' y='7' width='12' height='2' fill='#d37756'/>
-<rect x='5' y='6' width='1' height='1' fill='#03050e'/>
-<rect x='10' y='6' width='1' height='1' fill='#03050e'/>
-<rect x='4' y='11' width='1' height='2' fill='#d37756'/>
-<rect x='6' y='11' width='1' height='2' fill='#d37756'/>
-<rect x='9' y='11' width='1' height='2' fill='#d37756'/>
-<rect x='11' y='11' width='1' height='2' fill='#d37756'/>
-</svg>"""
-FAVICON_BYTES = FAVICON_SVG.encode("utf-8")
+IMAGES_DIR = Path(__file__).resolve().parent / "images"
+FAVICON_PATH = IMAGES_DIR / "favicon.svg"
+LOGOMARCA_PATH = IMAGES_DIR / "logomarca.png"
 
 
 def _format_date(date_str):
@@ -288,7 +279,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>Histórico da Sessão</title>
 <style>
   :root, [data-theme="dark"] {{
@@ -456,7 +447,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>Sessão {sid}</title>
 <style>
   :root, [data-theme="dark"] {{
@@ -647,7 +638,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>Painel de Uso do Claude Code</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -687,7 +678,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 
   header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
+  header h1 { margin: 0; display: flex; align-items: center; }
+  .logomarca { display: block; height: 36px; width: auto; max-width: min(320px, 48vw); object-fit: contain; }
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .header-actions { display: flex; align-items: center; gap: 8px; }
@@ -793,7 +785,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>Painel de Uso do Claude Code</h1>
+  <h1><img class="logomarca" src="/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
   <div class="meta" id="meta">Carregando...</div>
   <div class="header-controls">
     <div class="header-actions">
@@ -1652,12 +1644,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-        elif parsed.path in ("/favicon.svg", "/favicon.ico"):
+        elif parsed.path in ("/favicon.svg", "/favicon.ico", "/images/favicon.svg"):
+            if not FAVICON_PATH.exists():
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = FAVICON_PATH.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "image/svg+xml")
-            self.send_header("Content-Length", str(len(FAVICON_BYTES)))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(FAVICON_BYTES)
+            self.wfile.write(body)
+        elif parsed.path == "/images/logomarca.png":
+            if not LOGOMARCA_PATH.exists():
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = LOGOMARCA_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         else:
             self.send_response(404)
