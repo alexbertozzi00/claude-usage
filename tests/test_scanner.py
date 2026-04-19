@@ -169,6 +169,7 @@ class TestParseJsonlFile(unittest.TestCase):
         path = self._write_jsonl("test.jsonl", [record])
         _, turns, _ = parse_jsonl_file(path)
         self.assertEqual(turns[0]["tool_name"], "Read")
+        self.assertEqual(turns[0]["has_tool_marker"], 1)
 
 
 class TestMessageIdDedup(unittest.TestCase):
@@ -301,8 +302,8 @@ class TestMessageIdDedupIntegration(unittest.TestCase):
         # Should still be 1 turn (UNIQUE index prevents duplicate)
         self.assertEqual(count2, 1)
 
-    def test_schema_migration_adds_message_id(self):
-        """Existing DBs without message_id column should be upgraded."""
+    def test_schema_migration_adds_message_id_and_tool_marker(self):
+        """Existing DBs without message_id/has_tool_marker should be upgraded."""
         conn = sqlite3.connect(self.db_path)
         conn.executescript("""
             CREATE TABLE turns (
@@ -321,7 +322,7 @@ class TestMessageIdDedupIntegration(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        # init_db should add message_id column
+        # init_db should add missing columns
         from scanner import get_db, init_db
         conn = get_db(self.db_path)
         init_db(conn)
@@ -329,6 +330,7 @@ class TestMessageIdDedupIntegration(unittest.TestCase):
         row = conn.execute("PRAGMA table_info(turns)").fetchall()
         col_names = [r["name"] for r in row]
         self.assertIn("message_id", col_names)
+        self.assertIn("has_tool_marker", col_names)
         conn.close()
 
 
