@@ -37,6 +37,7 @@ COMMON_LAYOUT_STYLES = """
   .app-logo { display: block; height: 32px; width: auto; object-fit: contain; }
   .app-header-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--text, #e2e8f0); }
   .app-header-subtitle { color: var(--muted, #8892a4); font-size: 12px; }
+  .app-header-right { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
   .app-back-link {
     color: var(--link, #6aa6ff);
     text-decoration: none;
@@ -51,6 +52,20 @@ COMMON_LAYOUT_STYLES = """
   .app-footer-content p { color: var(--muted, #8892a4); font-size: 12px; line-height: 1.7; margin: 0; }
   .app-footer-content a { color: var(--link, #6aa6ff); text-decoration: none; }
   .app-footer-content a:hover { text-decoration: underline; }
+"""
+
+HEADER_THEME_TOGGLE_HTML = """
+<label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
+  <input type="checkbox" id="toggle">
+  <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(3.5 3.5)" data-name="Component 15 – 1" id="Component_15_1">
+      <g filter="url(#container)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><rect fill="#83cbd8" transform="translate(3.5 3.5)" rx="17.5" height="35" width="60.667" data-name="container" id="container"></rect></g>
+      <g transform="translate(2.333 2.333)" id="button"><g data-name="sun" id="sun"><g filter="url(#sun-outer)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><circle fill="#f8e664" transform="translate(5.83 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="sun-outer" id="sun-outer-2"></circle></g><g filter="url(#sun)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><path fill="rgba(246,254,247,0.29)" transform="translate(9.33 9.33)" d="M11.667,0A11.667,11.667,0,1,1,0,11.667,11.667,11.667,0,0,1,11.667,0Z" data-name="sun" id="sun-3"></path></g><circle fill="#fcf4b9" transform="translate(8.167 8.167)" r="7" cy="7" cx="7" id="sun-inner"></circle></g><g data-name="moon" id="moon"><g filter="url(#moon)" transform="matrix(1, 0, 0, 1, -31.5, -5.83)"><circle fill="#cce6ee" transform="translate(31.5 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="moon" id="moon-3"></circle></g><g fill="#a6cad0" transform="translate(-24.415 -1.009)" id="patches"><circle transform="translate(43.009 4.496)" r="2" cy="2" cx="2"></circle><circle transform="translate(39.366 17.952)" r="2" cy="2" cx="2" data-name="patch"></circle><circle transform="translate(33.016 8.044)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(51.081 18.888)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(33.016 22.503)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(50.081 10.53)" r="1.5" cy="1.5" cx="1.5" data-name="patch"></circle></g></g></g>
+      <g filter="url(#cloud)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><path fill="#fff" transform="translate(-3466.47 -160.94)" d="M3512.81,173.815a4.463,4.463,0,0,1,2.243.62.95.95,0,0,1,.72-1.281,4.852,4.852,0,0,1,2.623.519c.034.02-.5-1.968.281-2.716a2.117,2.117,0,0,1,2.829-.274,1.821,1.821,0,0,1,.854,1.858c.063.037,2.594-.049,3.285,1.273s-.865,2.544-.807,2.626a12.192,12.192,0,0,1,2.278.892c.553.448,1.106,1.992-1.62,2.927a7.742,7.742,0,0,1-3.762-.3c-1.28-.49-1.181-2.65-1.137-2.624s-1.417,2.2-2.623,2.2a4.172,4.172,0,0,1-2.394-1.206,3.825,3.825,0,0,1-2.771.774c-3.429-.46-2.333-3.267-2.2-3.55A3.721,3.721,0,0,1,3512.81,173.815Z" data-name="cloud" id="cloud"></path></g>
+      <g fill="#def8ff" transform="translate(3.585 1.325)" id="stars"><path transform="matrix(-1, 0.017, -0.017, -1, 24.231, 3.055)" d="M.774,0,.566.559,0,.539.458.933.25,1.492l.485-.361.458.394L1.024.953,1.509.592.943.572Z"></path><path transform="matrix(-0.777, 0.629, -0.629, -0.777, 23.185, 12.358)" d="M1.341.529.836.472.736,0,.505.46,0,.4.4.729l-.231.46L.605.932l.4.326L.9.786Z" data-name="star"></path><path transform="matrix(0.438, 0.899, -0.899, 0.438, 23.177, 29.735)" d="M.015,1.065.475.9l.285.365L.766.772l.46-.164L.745.494.751,0,.481.407,0,.293.285.658Z" data-name="star"></path><path transform="translate(12.677 0.388) rotate(104)" d="M1.161,1.6,1.059,1,1.574.722.962.607.86,0,.613.572,0,.457.446.881.2,1.454l.516-.274Z" data-name="star"></path><path transform="matrix(-0.07, 0.998, -0.998, -0.07, 11.066, 15.457)" d="M.873,1.648l.114-.62L1.579.945,1.03.62,1.144,0,.706.464.157.139.438.7,0,1.167l.592-.083Z" data-name="star"></path><path transform="translate(8.326 28.061) rotate(11)" d="M.593,0,.638.724,0,.982l.7.211.045.724.36-.64.7.211L1.342.935,1.7.294,1.063.552Z" data-name="star"></path><path transform="translate(5.012 5.962) rotate(172)" d="M.816,0,.5.455,0,.311.323.767l-.312.455.516-.215.323.456L.827.911,1.343.7.839.552Z" data-name="star"></path><path transform="translate(2.218 14.616) rotate(169)" d="M1.261,0,.774.571.114.3.487.967,0,1.538.728,1.32l.372.662.047-.749.728-.218L1.215.749Z" data-name="star"></path></g>
+    </g>
+  </svg>
+</label>
 """
 
 
@@ -608,7 +623,12 @@ def get_session_history(session_id, db_path=DB_PATH):
 
 
 def render_session_history_html(session_data):
-    header_html = render_app_header("Histórico da Sessão", subtitle="Visualização detalhada de uma sessão")
+    header_html = render_app_header(
+        "Histórico da Sessão",
+        subtitle="Visualização detalhada de uma sessão",
+        show_back_link=False,
+        right_html=HEADER_THEME_TOGGLE_HTML,
+    )
     footer_html = render_app_footer()
     if "error" in session_data:
         err = escape(session_data["error"])
@@ -730,8 +750,7 @@ def render_session_history_html(session_data):
   body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
   .wrap {{ width: min(1100px, 100%); margin: 0 auto; padding: clamp(16px, 3vw, 28px); }}
   .panel {{ background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: clamp(14px, 2.4vw, 24px); }}
-  .topbar {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }}
-  .topbar-actions {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }}
+  .topbar {{ display: flex; justify-content: flex-start; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }}
   .hide-tools {{ display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }}
   .hide-tools label {{ display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }}
   .hide-tools input {{ width: 14px; height: 14px; accent-color: var(--link); cursor: pointer; }}
@@ -772,8 +791,6 @@ def render_session_history_html(session_data):
   }}
   h1 {{ margin: 0 0 8px; font-size: 20px; color: var(--accent); }}
   .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
-  .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
-  .back:hover {{ text-decoration: underline; }}
   .session-title-row {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }}
   .session-edit-btn {{ border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
   .session-edit-btn:hover {{ color: var(--text); border-color: var(--accent); }}
@@ -821,8 +838,6 @@ def render_session_history_html(session_data):
 <div class="wrap">
   <div class="panel">
   <div class="topbar">
-    <a class="back" href="/">← Voltar ao painel</a>
-    <div class="topbar-actions">
     <div class="hide-tools">
       <label for="hide-tools-toggle">
         <input type="checkbox" id="hide-tools-toggle">
@@ -832,18 +847,6 @@ def render_session_history_html(session_data):
         ?
         <span class="tooltip-text">Oculta mensagens que contenham [tool_*], reduzindo poluição visual e facilitando a leitura da sessão.</span>
       </span>
-    </div>
-    <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
-      <input type="checkbox" id="toggle">
-      <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
-        <g transform="translate(3.5 3.5)" data-name="Component 15 – 1" id="Component_15_1">
-          <g filter="url(#container)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><rect fill="#83cbd8" transform="translate(3.5 3.5)" rx="17.5" height="35" width="60.667" data-name="container" id="container"></rect></g>
-          <g transform="translate(2.333 2.333)" id="button"><g data-name="sun" id="sun"><g filter="url(#sun-outer)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><circle fill="#f8e664" transform="translate(5.83 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="sun-outer" id="sun-outer-2"></circle></g><g filter="url(#sun)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><path fill="rgba(246,254,247,0.29)" transform="translate(9.33 9.33)" d="M11.667,0A11.667,11.667,0,1,1,0,11.667,11.667,11.667,0,0,1,11.667,0Z" data-name="sun" id="sun-3"></path></g><circle fill="#fcf4b9" transform="translate(8.167 8.167)" r="7" cy="7" cx="7" id="sun-inner"></circle></g><g data-name="moon" id="moon"><g filter="url(#moon)" transform="matrix(1, 0, 0, 1, -31.5, -5.83)"><circle fill="#cce6ee" transform="translate(31.5 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="moon" id="moon-3"></circle></g><g fill="#a6cad0" transform="translate(-24.415 -1.009)" id="patches"><circle transform="translate(43.009 4.496)" r="2" cy="2" cx="2"></circle><circle transform="translate(39.366 17.952)" r="2" cy="2" cx="2" data-name="patch"></circle><circle transform="translate(33.016 8.044)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(51.081 18.888)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(33.016 22.503)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(50.081 10.53)" r="1.5" cy="1.5" cx="1.5" data-name="patch"></circle></g></g></g>
-          <g filter="url(#cloud)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><path fill="#fff" transform="translate(-3466.47 -160.94)" d="M3512.81,173.815a4.463,4.463,0,0,1,2.243.62.95.95,0,0,1,.72-1.281,4.852,4.852,0,0,1,2.623.519c.034.02-.5-1.968.281-2.716a2.117,2.117,0,0,1,2.829-.274,1.821,1.821,0,0,1,.854,1.858c.063.037,2.594-.049,3.285,1.273s-.865,2.544-.807,2.626a12.192,12.192,0,0,1,2.278.892c.553.448,1.106,1.992-1.62,2.927a7.742,7.742,0,0,1-3.762-.3c-1.28-.49-1.181-2.65-1.137-2.624s-1.417,2.2-2.623,2.2a4.172,4.172,0,0,1-2.394-1.206,3.825,3.825,0,0,1-2.771.774c-3.429-.46-2.333-3.267-2.2-3.55A3.721,3.721,0,0,1,3512.81,173.815Z" data-name="cloud" id="cloud"></path></g>
-          <g fill="#def8ff" transform="translate(3.585 1.325)" id="stars"><path transform="matrix(-1, 0.017, -0.017, -1, 24.231, 3.055)" d="M.774,0,.566.559,0,.539.458.933.25,1.492l.485-.361.458.394L1.024.953,1.509.592.943.572Z"></path><path transform="matrix(-0.777, 0.629, -0.629, -0.777, 23.185, 12.358)" d="M1.341.529.836.472.736,0,.505.46,0,.4.4.729l-.231.46L.605.932l.4.326L.9.786Z" data-name="star"></path><path transform="matrix(0.438, 0.899, -0.899, 0.438, 23.177, 29.735)" d="M.015,1.065.475.9l.285.365L.766.772l.46-.164L.745.494.751,0,.481.407,0,.293.285.658Z" data-name="star"></path><path transform="translate(12.677 0.388) rotate(104)" d="M1.161,1.6,1.059,1,1.574.722.962.607.86,0,.613.572,0,.457.446.881.2,1.454l.516-.274Z" data-name="star"></path><path transform="matrix(-0.07, 0.998, -0.998, -0.07, 11.066, 15.457)" d="M.873,1.648l.114-.62L1.579.945,1.03.62,1.144,0,.706.464.157.139.438.7,0,1.167l.592-.083Z" data-name="star"></path><path transform="translate(8.326 28.061) rotate(11)" d="M.593,0,.638.724,0,.982l.7.211.045.724.36-.64.7.211L1.342.935,1.7.294,1.063.552Z" data-name="star"></path><path transform="translate(5.012 5.962) rotate(172)" d="M.816,0,.5.455,0,.311.323.767l-.312.455.516-.215.323.456L.827.911,1.343.7.839.552Z" data-name="star"></path><path transform="translate(2.218 14.616) rotate(169)" d="M1.261,0,.774.571.114.3.487.967,0,1.538.728,1.32l.372.662.047-.749.728-.218L1.215.749Z" data-name="star"></path></g>
-        </g>
-      </svg>
-    </label>
     </div>
   </div>
   <div class="session-title-row">
@@ -933,7 +936,11 @@ def render_hour_sessions_html(data):
     footer_html = render_app_footer()
     if "error" in data:
         err = escape(data["error"])
-        header_html = render_app_header("Sessões por Hora", subtitle="Resumo por faixa horária")
+        header_html = render_app_header(
+            "Sessões por Hora",
+            subtitle="Resumo por faixa horária",
+            right_html=HEADER_THEME_TOGGLE_HTML,
+        )
         return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -953,9 +960,57 @@ def render_hour_sessions_html(data):
     .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
     a {{ color:#6aa6ff; text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
+    #theme-toggle-button {{
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 59px;
+      height: 35px;
+      cursor: pointer;
+    }}
+    #theme-toggle-button svg {{ display: block; }}
+    #toggle {{
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }}
+    #container, #patches, #stars, #button, #sun, #moon, #cloud {{
+      transition-property: all;
+      transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+      transition-duration: 0.25s;
+    }}
+    #toggle:checked + svg #container {{ fill: #2b4360; }}
+    #toggle:checked + svg #button {{ transform: translate(28px, 2.333px); }}
+    #sun {{ opacity: 1; }}
+    #toggle:checked + svg #sun {{ opacity: 0; }}
+    #moon {{ opacity: 0; }}
+    #toggle:checked + svg #moon {{ opacity: 1; }}
+    #cloud {{ opacity: 1; }}
+    #toggle:checked + svg #cloud {{ opacity: 0; }}
+    #stars {{ opacity: 0; }}
+    #toggle:checked + svg #stars {{ opacity: 1; }}
   </style>
 </head>
-<body>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}</body>
+<body>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
+<script>
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
+  function getPreferredTheme() {{
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }}
+  function applyTheme(theme) {{
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const toggle = document.getElementById('toggle');
+    if (toggle) toggle.checked = theme === 'dark';
+  }}
+  applyTheme(getPreferredTheme());
+  document.getElementById('toggle')?.addEventListener('change', (event) => {{
+    applyTheme(event.target.checked ? 'dark' : 'light');
+  }});
+</script>
+</body>
 </html>"""
 
     hour = escape(f"{data.get('hour', '00')}:00")
@@ -965,6 +1020,7 @@ def render_hour_sessions_html(data):
     header_html = render_app_header(
         f"Sessões no horário {hour}",
         subtitle=f"Período: {cutoff} · Modelos: {models_text}",
+        right_html=HEADER_THEME_TOGGLE_HTML,
     )
     rows = []
     for s in data.get("sessions", []):
@@ -1013,6 +1069,35 @@ def render_hour_sessions_html(data):
     table {{ width:100%; border-collapse:collapse; }}
     th, td {{ border-bottom:1px solid #2a2d3a; padding:10px 12px; text-align:left; }}
     th {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+    #theme-toggle-button {{
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 59px;
+      height: 35px;
+      cursor: pointer;
+    }}
+    #theme-toggle-button svg {{ display: block; }}
+    #toggle {{
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }}
+    #container, #patches, #stars, #button, #sun, #moon, #cloud {{
+      transition-property: all;
+      transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+      transition-duration: 0.25s;
+    }}
+    #toggle:checked + svg #container {{ fill: #2b4360; }}
+    #toggle:checked + svg #button {{ transform: translate(28px, 2.333px); }}
+    #sun {{ opacity: 1; }}
+    #toggle:checked + svg #sun {{ opacity: 0; }}
+    #moon {{ opacity: 0; }}
+    #toggle:checked + svg #moon {{ opacity: 1; }}
+    #cloud {{ opacity: 1; }}
+    #toggle:checked + svg #cloud {{ opacity: 0; }}
+    #stars {{ opacity: 0; }}
+    #toggle:checked + svg #stars {{ opacity: 1; }}
   </style>
 </head>
 <body>
@@ -1035,6 +1120,24 @@ def render_hour_sessions_html(data):
     </table>
   </div>
   {footer_html}
+<script>
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
+  function getPreferredTheme() {{
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }}
+  function applyTheme(theme) {{
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const toggle = document.getElementById('toggle');
+    if (toggle) toggle.checked = theme === 'dark';
+  }}
+  applyTheme(getPreferredTheme());
+  document.getElementById('toggle')?.addEventListener('change', (event) => {{
+    applyTheme(event.target.checked ? 'dark' : 'light');
+  }});
+</script>
 </body>
 </html>"""
 
@@ -1484,7 +1587,7 @@ let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
 let sessionsPage = 1;
-const SESSIONS_PAGE_SIZE = 20;
+const SESSIONS_PAGE_SIZE = 15;
 const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;

@@ -24,6 +24,7 @@ O Claude Code grava logs locais detalhados de uso — contagem de tokens, modelo
 - **Pausa da atualização automática da página** (com opção de retomar)
 - Suporte a **tema claro e escuro**
 - Criação de **paginação na lista de sessões**
+- **Lista de mensagens por hora**
 
 ---
 
