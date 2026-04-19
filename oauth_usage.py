@@ -8,12 +8,14 @@ import os
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib import error, request
 
 OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_CACHE_TTL_SECONDS = 45
+ENV_FILE_PATH = Path(__file__).resolve().parent / ".env"
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,37 @@ _USAGE_CACHE: dict[str, Any] = {
     "expires_at": 0.0,
     "last_success": None,
 }
+
+
+def _read_token_from_env_file(path: Path | None = None) -> str:
+    env_path = path or ENV_FILE_PATH
+    try:
+        if not env_path.exists() or not env_path.is_file():
+            return ""
+        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() != "CLAUDE_OAUTH_ACCESS_TOKEN":
+                continue
+            normalized = value.strip().strip('"').strip("'")
+            return normalized
+    except OSError as exc:
+        logger.warning("Falha ao ler .env para oauth usage: %s", exc)
+    return ""
+
+
+def _resolve_access_token(access_token: str | None) -> str:
+    return (
+        (access_token or "").strip()
+        or (os.environ.get("CLAUDE_OAUTH_ACCESS_TOKEN") or "").strip()
+        or _read_token_from_env_file()
+    )
 
 
 def _iso_now() -> str:
@@ -176,7 +209,7 @@ def get_oauth_usage_snapshot(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
 ) -> dict[str, Any]:
-    token = (access_token or os.environ.get("CLAUDE_OAUTH_ACCESS_TOKEN") or "").strip()
+    token = _resolve_access_token(access_token)
     now = time.time()
 
     if _USAGE_CACHE["last_success"] and _USAGE_CACHE["expires_at"] > now:
@@ -186,7 +219,7 @@ def get_oauth_usage_snapshot(
 
     if not token:
         return _build_error_snapshot(
-            "OAuth access token ausente. Defina CLAUDE_OAUTH_ACCESS_TOKEN para habilitar oauth usage."
+            "OAuth access token ausente. Defina CLAUDE_OAUTH_ACCESS_TOKEN no ambiente ou no arquivo .env."
         )
 
     req = request.Request(
