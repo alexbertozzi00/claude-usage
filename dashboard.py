@@ -347,7 +347,7 @@ def render_session_history_html(session_data):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
-<title>Histórico da Sessão</title>
+<title>ClaudeFlow - Sessão</title>
 <style>
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
@@ -512,7 +512,7 @@ def render_session_history_html(session_data):
     custom_name = escape(custom_name_raw)
     source = escape(session_data["transcript_path"])
     content = "\n".join(rows)
-    title_text = custom_name if custom_name_raw else f"Sessão {sid_raw}"
+    title_text = custom_name if custom_name_raw else sid_raw
     custom_name_meta = f"<div class=\"meta\">ID da sessão: {sid}</div>" if custom_name_raw else ""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -520,7 +520,7 @@ def render_session_history_html(session_data):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
-<title>{escape(title_text)}</title>
+<title>{escape(f"ClaudeFlow - {title_text}")}</title>
 <style>
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
@@ -600,6 +600,10 @@ def render_session_history_html(session_data):
   .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
   .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
   .back:hover {{ text-decoration: underline; }}
+  .session-title-row {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }}
+  .session-edit-btn {{ border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
+  .session-edit-btn:hover {{ color: var(--text); border-color: var(--accent); }}
+  .session-edit-btn:disabled {{ opacity: 0.6; cursor: wait; }}
   #theme-toggle-button {{
     position: relative;
     display: flex;
@@ -667,13 +671,19 @@ def render_session_history_html(session_data):
     </label>
     </div>
   </div>
-  <h1>{custom_name if custom_name_raw else f"Sessão {sid}"}</h1>
+  <div class="session-title-row">
+    <h1 id="session-title">{custom_name if custom_name_raw else f"Sessão {sid}"}</h1>
+    <button id="session-rename-btn" class="session-edit-btn" type="button">✏️ Editar nome</button>
+  </div>
   {custom_name_meta}
   <div class="meta">Origem: {source}</div>
   {content}
   </div>
 </div>
 <script>
+  const MAX_CUSTOM_NAME_LENGTH = 80;
+  const sessionId = {json.dumps(sid_raw)};
+  let currentCustomName = {json.dumps(custom_name_raw)};
   const THEME_STORAGE_KEY = 'claude_usage_theme';
   const HIDE_TOOLS_STORAGE_KEY = 'claude_usage_hide_tools';
   function getPreferredTheme() {{
@@ -701,6 +711,43 @@ def render_session_history_html(session_data):
   document.getElementById('hide-tools-toggle')?.addEventListener('change', (event) => {{
     applyHideTools(Boolean(event.target.checked));
   }});
+  async function renameCurrentSession() {{
+    const titleEl = document.getElementById('session-title');
+    const btn = document.getElementById('session-rename-btn');
+    if (!titleEl || !btn) return;
+    const newName = window.prompt('Digite o nome personalizado da sessão (vazio para remover):', currentCustomName);
+    if (newName === null) return;
+    if (newName.length > MAX_CUSTOM_NAME_LENGTH) {{
+      window.alert(`Nome muito longo (máximo ${{MAX_CUSTOM_NAME_LENGTH}} caracteres).`);
+      return;
+    }}
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    try {{
+      const resp = await fetch('/api/session/rename', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          session_id: sessionId,
+          custom_name: newName,
+        }}),
+      }});
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {{
+        throw new Error(data.error || 'Falha ao renomear sessão.');
+      }}
+      const newTitle = (data.custom_name || '').trim() || sessionId;
+      currentCustomName = (data.custom_name || '').trim();
+      titleEl.textContent = currentCustomName || ('Sessão ' + sessionId.slice(0, 8));
+      document.title = 'ClaudeFlow - ' + newTitle;
+    }} catch (error) {{
+      window.alert(error.message || 'Erro ao salvar nome.');
+    }} finally {{
+      btn.disabled = false;
+      btn.textContent = '✏️ Editar nome';
+    }}
+  }}
+  document.getElementById('session-rename-btn')?.addEventListener('click', renameCurrentSession);
 </script>
 </body>
 </html>"""
@@ -712,7 +759,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
-<title>Painel de Uso do Claude Code</title>
+<title>ClaudeFlow - Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root, [data-theme="dark"] {
@@ -992,6 +1039,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <th class="sortable" onclick="setSessionSort('input')">Entrada <span class="sort-icon" id="sort-icon-input"></span></th>
         <th class="sortable" onclick="setSessionSort('output')">Saída <span class="sort-icon" id="sort-icon-output"></span></th>
         <th class="sortable" onclick="setSessionSort('cost')"><span class="th-with-tooltip">Custo Estimado <span class="tooltip" tabindex="0" aria-label="Ajuda sobre custo estimado">?<span class="tooltip-text">Custo estimado considerando o preço em tokens de API. Não se aplica aos planos Max/Pro, pois esses planos funcionam por assinatura.</span></span></span> <span class="sort-icon" id="sort-icon-cost"></span></th>
+        <th>Ação</th>
       </tr></thead>
       <tbody id="sessions-body"></tbody>
     </table>
@@ -1063,6 +1111,7 @@ let sessionSortDir = 'desc';
 const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
+const MAX_CUSTOM_NAME_LENGTH = 80;
 let autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
 let latestGeneratedAt = null;
 
@@ -1584,7 +1633,7 @@ function renderSessionsTable(sessions) {
     const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
     const isSaving = renamingSessions.has(s.session_id_full);
     return `<tr>
-      <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}" target="_blank" rel="noopener noreferrer">${esc(s.session_id)}&hellip;</a></td>
+      <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}">${esc(s.session_id)}&hellip;</a></td>
       <td>${esc(displayName)}</td>
       <td class="muted">${esc(s.last)}</td>
       <td class="muted">${esc(s.duration_min)}m</td>
