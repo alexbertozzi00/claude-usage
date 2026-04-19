@@ -948,6 +948,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
+  .disclaimer-banner {
+    margin: 0 24px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .disclaimer-banner strong { color: var(--text); }
 
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; }
@@ -994,6 +1005,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
+</div>
+
+<div class="disclaimer-banner">
+  <strong>Aviso de cobertura:</strong> este painel exibe apenas sessões registradas localmente pelo Claude Code (CLI/terminal).
+  Sessões feitas via Claude Web ou aplicativo de desktop ainda não estão disponíveis.
 </div>
 
 <div class="container">
