@@ -1611,7 +1611,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <ul id="insights-list" class="insight-list"></ul>
   </div>
   <div class="charts-grid">
-    <div class="chart-card wide">
+    <div class="chart-card wide" id="trend-chart-card">
       <h2 id="daily-chart-title">Uso Diário de Tokens</h2>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
@@ -2305,7 +2305,15 @@ function applyFilter() {
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
   renderDailyChart(daily);
-  renderTrendChart(daily);
+  updateTrendChartVisibility();
+  if (selectedRange === '1d') {
+    if (charts.trend) {
+      charts.trend.destroy();
+      charts.trend = null;
+    }
+  } else {
+    renderTrendChart(daily);
+  }
   renderModelChart(byModel);
   renderProjectChart(byProject);
   renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
@@ -2475,6 +2483,13 @@ function renderTrendChart(daily) {
       }
     }
   });
+}
+
+function updateTrendChartVisibility() {
+  const trendCard = document.getElementById('trend-chart-card');
+  if (!trendCard) return;
+  const shouldHide = selectedRange === '1d';
+  trendCard.style.display = shouldHide ? 'none' : '';
 }
 
 function renderModelChart(byModel) {
