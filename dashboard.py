@@ -4,12 +4,14 @@ dashboard.py - Local web dashboard served on localhost:8080.
 
 import json
 import os
+import re
 import sqlite3
+import subprocess
 from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
@@ -103,6 +105,144 @@ def rename_session(session_id, custom_name, db_path=DB_PATH):
         return {"ok": False, "error": f"Erro ao renomear sessão: {e}"}, 500
     finally:
         conn.close()
+
+
+def _parse_usage_percent(value):
+    if value is None:
+        return None
+    try:
+        cleaned = str(value).strip().replace("%", "").replace(",", ".")
+        if cleaned == "":
+            return None
+        return float(cleaned)
+    except Exception:
+        return None
+
+
+def _parse_usage_text(stdout):
+    text = (stdout or "").strip()
+    session_used = session_avail = week_used = week_avail = None
+    session_resets = week_resets = ""
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines:
+        lower = line.lower()
+        if "session" in lower:
+            used_match = re.search(r"used[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
+            avail_match = re.search(r"(available|left|remaining)[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
+            reset_match = re.search(r"(reset[s]? at|resets?)[^0-9a-z]*([^\n]+)$", line, re.IGNORECASE)
+            if used_match:
+                session_used = _parse_usage_percent(used_match.group(1))
+            if avail_match:
+                session_avail = _parse_usage_percent(avail_match.group(2))
+            if reset_match:
+                session_resets = reset_match.group(2).strip()
+        if "week" in lower:
+            used_match = re.search(r"used[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
+            avail_match = re.search(r"(available|left|remaining)[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
+            reset_match = re.search(r"(reset[s]? at|resets?)[^0-9a-z]*([^\n]+)$", line, re.IGNORECASE)
+            if used_match:
+                week_used = _parse_usage_percent(used_match.group(1))
+            if avail_match:
+                week_avail = _parse_usage_percent(avail_match.group(2))
+            if reset_match:
+                week_resets = reset_match.group(2).strip()
+
+    return {
+        "current_session": {
+            "used_percent": session_used,
+            "available_percent": session_avail,
+            "resets_at": session_resets,
+        },
+        "current_week": {
+            "used_percent": week_used,
+            "available_percent": week_avail,
+            "resets_at": week_resets,
+        },
+    }
+
+
+def get_usage_snapshot(timeout_seconds=8):
+    commands = [
+        ["claude", "/usage", "--json"],
+        ["claude", "/usage"],
+    ]
+    errors = []
+    last_excerpt = ""
+
+    for cmd in commands:
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                stdin=subprocess.DEVNULL,
+            )
+            stdout = (proc.stdout or "").strip()
+            stderr = (proc.stderr or "").strip()
+            if stdout:
+                last_excerpt = stdout[:4000]
+            if proc.returncode != 0:
+                errors.append(f"{' '.join(cmd)} retornou código {proc.returncode}: {stderr or 'sem stderr'}")
+                continue
+
+            # Try JSON output first
+            try:
+                payload = json.loads(stdout)
+                if isinstance(payload, dict):
+                    return {
+                        "ok": True,
+                        "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "current_session": {
+                            "used_percent": _parse_usage_percent(payload.get("current_session", {}).get("used_percent")),
+                            "available_percent": _parse_usage_percent(payload.get("current_session", {}).get("available_percent")),
+                            "resets_at": str(payload.get("current_session", {}).get("resets_at") or ""),
+                        },
+                        "current_week": {
+                            "used_percent": _parse_usage_percent(payload.get("current_week", {}).get("used_percent")),
+                            "available_percent": _parse_usage_percent(payload.get("current_week", {}).get("available_percent")),
+                            "resets_at": str(payload.get("current_week", {}).get("resets_at") or ""),
+                        },
+                        "raw_excerpt": stdout[:2000],
+                        "error": "",
+                    }
+            except Exception:
+                pass
+
+            parsed = _parse_usage_text(stdout)
+            return {
+                "ok": True,
+                "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "current_session": parsed["current_session"],
+                "current_week": parsed["current_week"],
+                "raw_excerpt": stdout[:2000],
+                "error": "",
+            }
+        except subprocess.TimeoutExpired:
+            errors.append(f"{' '.join(cmd)} expirou após {timeout_seconds}s")
+        except FileNotFoundError:
+            errors.append("Comando `claude` não encontrado no PATH.")
+            break
+        except Exception as exc:
+            errors.append(f"{' '.join(cmd)} falhou: {exc}")
+
+    return {
+        "ok": False,
+        "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "current_session": {
+            "used_percent": None,
+            "available_percent": None,
+            "resets_at": "",
+        },
+        "current_week": {
+            "used_percent": None,
+            "available_percent": None,
+            "resets_at": "",
+        },
+        "raw_excerpt": last_excerpt[:2000],
+        "error": "Falha ao capturar saída do Claude CLI. " + " | ".join(errors[:3]),
+    }
 
 
 def get_dashboard_data(db_path=DB_PATH):
@@ -213,6 +353,65 @@ def get_dashboard_data(db_path=DB_PATH):
         "sessions_all":   sessions_all,
         "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
+
+
+def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
+    if not db_path.exists():
+        return {"error": "Banco de dados não encontrado."}
+    if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
+        return {"error": "Hora inválida."}
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        model_filter = [m for m in (models or []) if m]
+        where = ["substr(t.timestamp, 12, 2) = ?"]
+        params = [hour]
+        if cutoff:
+            where.append("substr(t.timestamp, 1, 10) >= ?")
+            params.append(cutoff)
+        if model_filter:
+            where.append("COALESCE(t.model, 'unknown') IN (" + ",".join("?" for _ in model_filter) + ")")
+            params.extend(model_filter)
+
+        rows = conn.execute(f"""
+            SELECT
+                t.session_id as session_id,
+                COALESCE(s.custom_name, '') as custom_name,
+                COALESCE(s.project_name, 'unknown') as project_name,
+                COALESCE(s.model, COALESCE(t.model, 'unknown')) as model,
+                MAX(t.timestamp) as last_timestamp,
+                COUNT(*) as turns_at_hour,
+                SUM(t.input_tokens) as input_tokens,
+                SUM(t.output_tokens) as output_tokens
+            FROM turns t
+            LEFT JOIN sessions s ON s.session_id = t.session_id
+            WHERE {" AND ".join(where)}
+            GROUP BY t.session_id, s.custom_name, s.project_name, s.model, t.model
+            ORDER BY MAX(t.timestamp) DESC
+        """, params).fetchall()
+
+        sessions = [{
+            "session_id_full": r["session_id"],
+            "session_id": (r["session_id"] or "")[:8],
+            "custom_name": r["custom_name"] or "",
+            "project": _display_project_name(r["project_name"]),
+            "model": r["model"] or "unknown",
+            "last": _format_timestamp(r["last_timestamp"] or ""),
+            "turns_at_hour": r["turns_at_hour"] or 0,
+            "input": r["input_tokens"] or 0,
+            "output": r["output_tokens"] or 0,
+        } for r in rows]
+
+        return {
+            "hour": hour,
+            "cutoff": cutoff or "",
+            "models": model_filter,
+            "sessions": sessions,
+            "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        }
+    finally:
+        conn.close()
 
 def _extract_text_parts(content):
     if content is None:
@@ -789,6 +988,94 @@ def render_session_history_html(session_data):
 </html>"""
 
 
+def render_hour_sessions_html(data):
+    if "error" in data:
+        err = escape(data["error"])
+        return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClaudeFlow - Sessões por Hora</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    a {{ color:#6aa6ff; text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+  </style>
+</head>
+<body><div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p><p><a href="/">← Voltar ao painel</a></p></div></body>
+</html>"""
+
+    hour = escape(f"{data.get('hour', '00')}:00")
+    cutoff = escape(data.get("cutoff") or "início")
+    models = data.get("models") or []
+    models_text = ", ".join(escape(m) for m in models) if models else "todos"
+    rows = []
+    for s in data.get("sessions", []):
+        sid = escape(s["session_id"])
+        sid_full = escape(s["session_id_full"])
+        custom = escape(s["custom_name"] or "")
+        project = escape(s["project"])
+        model = escape(s["model"])
+        last = escape(s["last"])
+        turns_at_hour = int(s["turns_at_hour"] or 0)
+        input_tokens = int(s["input"] or 0)
+        output_tokens = int(s["output"] or 0)
+        label = custom if custom else sid
+        rows.append(
+            f"<tr>"
+            f"<td><a href=\"/session/{sid_full}\">{label}</a></td>"
+            f"<td>{project}</td>"
+            f"<td>{model}</td>"
+            f"<td>{turns_at_hour}</td>"
+            f"<td>{input_tokens:,}</td>"
+            f"<td>{output_tokens:,}</td>"
+            f"<td>{last}</td>"
+            f"</tr>"
+        )
+    table_rows = "\n".join(rows) if rows else "<tr><td colspan=\"7\">Nenhuma sessão encontrada para esse horário e filtros.</td></tr>"
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClaudeFlow - Sessões por Hora ({hour})</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    .wrap {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+    .meta {{ color:#94a3b8; margin-bottom: 12px; }}
+    a {{ color:#6aa6ff; text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    table {{ width:100%; border-collapse:collapse; }}
+    th, td {{ border-bottom:1px solid #2a2d3a; padding:10px 12px; text-align:left; }}
+    th {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Sessões no horário {hour}</h1>
+    <div class="meta">Período a partir de: {cutoff} · Modelos: {models_text} · Atualizado em: {escape(data.get("generated_at") or "")}</div>
+    <p><a href="/">← Voltar ao painel</a></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Sessão</th>
+          <th>Projeto</th>
+          <th>Modelo</th>
+          <th>Interações no horário</th>
+          <th>Entrada</th>
+          <th>Saída</th>
+          <th>Última atividade</th>
+        </tr>
+      </thead>
+      <tbody>{table_rows}</tbody>
+    </table>
+  </div>
+</body>
+</html>"""
+
+
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -930,6 +1217,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
   .chart-card.wide { grid-column: 1 / -1; }
   .chart-card h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+  .chart-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .chart-wrap { position: relative; height: 240px; }
   .chart-wrap.tall { height: 300px; }
 
@@ -1125,7 +1413,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap"><canvas id="chart-project"></canvas></div>
     </div>
     <div class="chart-card wide">
-      <h2><span class="th-with-tooltip">Atividade por Hora <span class="tooltip" tabindex="0" aria-label="Ajuda sobre atividade por hora">?<span class="tooltip-text">Cada linha representa um horário (00:00–23:00) dentro do período filtrado. A barra indica a média de tokens (entrada + saída) por dia naquele horário, e o valor à direita mostra interações totais e média diária.</span></span></span></h2>
+      <h2 class="chart-title-row"><span>Atividade por Hora</span><span class="tooltip" tabindex="0" aria-label="Ajuda sobre atividade por hora">?<span class="tooltip-text">Cada linha representa um horário (00:00–23:00) dentro do período filtrado. A barra indica a média de tokens (entrada + saída) por dia naquele horário, e o valor à direita mostra interações totais e média diária.</span></span></h2>
       <div id="hourly-activity-meta" class="hourly-meta"></div>
       <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
@@ -1989,13 +2277,23 @@ function renderHourlyActivity(hourlyRows, cutoff) {
   if (meta) {
     meta.textContent = `Período analisado: ${dayCount} dia(s). Barra = média de tokens (entrada + saída) por dia em cada horário.`;
   }
+
+  const selectedModelsParam = encodeURIComponent(Array.from(selectedModels).join(','));
+  const cutoffParam = encodeURIComponent(cutoff || '');
+  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&models=${selectedModelsParam}`;
+
   container.innerHTML = withAverages.map(r => {
     const widthPct = (r.avgTokens / maxTokens) * 100;
+    const hourURL = buildHourURL(r.hour);
+    const turnsLabel = `${r.turns.toLocaleString()} (${r.avgTurns.toFixed(1)}/dia)`;
+    const turnsCell = r.turns > 0
+      ? `<a href="${hourURL}" class="session-link" title="Ver sessões deste horário">${turnsLabel}</a>`
+      : turnsLabel;
     return `
       <div class="hourly-row">
         <div>${r.hour}:00</div>
         <div class="hourly-track"><div class="hourly-fill" style="width:${widthPct}%"></div></div>
-        <div style="text-align:right">${r.turns.toLocaleString()} (${r.avgTurns.toFixed(1)}/dia)</div>
+        <div style="text-align:right">${turnsCell}</div>
       </div>
     `;
   }).join('');
@@ -2285,6 +2583,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/usage":
+            data = get_usage_snapshot()
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path.startswith("/hour/"):
+            hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
+            qs = parse_qs(parsed.query or "")
+            cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
+            models_raw = (qs.get("models", [""])[0] or "").strip()
+            models = [m.strip() for m in models_raw.split(",") if m.strip()]
+            data = get_sessions_for_hour(hour, cutoff=cutoff, models=models)
+            body = render_hour_sessions_html(data).encode("utf-8")
+            status_code = 404 if "error" in data else 200
+            self.send_response(status_code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
