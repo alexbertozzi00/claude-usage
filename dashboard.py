@@ -939,6 +939,7 @@ def render_hour_sessions_html(data):
         header_html = render_app_header(
             "Sessões por Hora",
             subtitle="Resumo por faixa horária",
+            show_back_link=False,
             right_html=HEADER_THEME_TOGGLE_HTML,
         )
         return f"""<!DOCTYPE html>
@@ -948,17 +949,26 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora</title>
   <style>
-    :root {{
+    :root, [data-theme="dark"] {{
+      --bg: #0f1117;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --link: #6aa6ff;
     }}
+    [data-theme="light"] {{
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --link: #2563eb;
+    }}
 {COMMON_LAYOUT_STYLES}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:var(--bg); color:var(--text); }}
     .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
-    a {{ color:#6aa6ff; text-decoration:none; }}
+    a {{ color:var(--link); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     #theme-toggle-button {{
       position: relative;
@@ -1020,6 +1030,7 @@ def render_hour_sessions_html(data):
     header_html = render_app_header(
         f"Sessões no horário {hour}",
         subtitle=f"Período: {cutoff} · Modelos: {models_text}",
+        show_back_link=False,
         right_html=HEADER_THEME_TOGGLE_HTML,
     )
     rows = []
@@ -1053,22 +1064,31 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora ({hour})</title>
   <style>
-    :root {{
+    :root, [data-theme="dark"] {{
+      --bg: #0f1117;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --link: #6aa6ff;
     }}
+    [data-theme="light"] {{
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --link: #2563eb;
+    }}
 {COMMON_LAYOUT_STYLES}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:var(--bg); color:var(--text); }}
     .wrap {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
-    .meta {{ color:#94a3b8; margin-bottom: 12px; }}
-    a {{ color:#6aa6ff; text-decoration:none; }}
+    .meta {{ color:var(--muted); margin-bottom: 12px; }}
+    a {{ color:var(--link); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     table {{ width:100%; border-collapse:collapse; }}
-    th, td {{ border-bottom:1px solid #2a2d3a; padding:10px 12px; text-align:left; }}
-    th {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+    th, td {{ border-bottom:1px solid var(--border); padding:10px 12px; text-align:left; }}
+    th {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
     #theme-toggle-button {{
       position: relative;
       display: flex;
