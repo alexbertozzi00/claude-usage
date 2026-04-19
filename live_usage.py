@@ -18,6 +18,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+OSC_RE = re.compile(r"\x1B\][^\x07]*(?:\x07|\x1B\\)")
+CTRL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 CURRENT_SESSION_RE = re.compile(
     r"Current\s+session.*?(?P<used>\d{1,3})%\s*used.*?Resets\s+(?P<resets>.+?)(?:\n|\r)",
     re.IGNORECASE | re.DOTALL,
@@ -47,7 +49,9 @@ class UsageSnapshot:
 
 
 def _strip_ansi(text: str) -> str:
+    text = OSC_RE.sub("", text)
     text = ANSI_RE.sub("", text)
+    text = CTRL_RE.sub("", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text
 
@@ -64,6 +68,43 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
         available_percent=max(0, 100 - used),
         resets_at=resets_at,
     )
+
+
+def _parse_blocks_fallback(payload: str) -> tuple[UsageBlock, UsageBlock, bool]:
+    """
+    Fallback tolerante ao layout:
+    - pega percentuais em ordem de aparição (ex.: 1% used, 51% used)
+    - pega linhas de reset em ordem
+    - mapeia [0] -> current session, [1] -> current week
+    """
+    percent_matches = re.findall(r"(\d{1,3})\s*%\s*(?:used|usado)?", payload, flags=re.IGNORECASE)
+    reset_matches = re.findall(r"Resets?\s+([^\n\r]+)", payload, flags=re.IGNORECASE)
+
+    session = UsageBlock()
+    week = UsageBlock()
+
+    if percent_matches:
+        try:
+            used = int(percent_matches[0])
+            session.used_percent = used
+            session.available_percent = max(0, 100 - used)
+        except Exception:
+            pass
+    if len(percent_matches) > 1:
+        try:
+            used = int(percent_matches[1])
+            week.used_percent = used
+            week.available_percent = max(0, 100 - used)
+        except Exception:
+            pass
+
+    if reset_matches:
+        session.resets_at = " ".join(reset_matches[0].split())
+    if len(reset_matches) > 1:
+        week.resets_at = " ".join(reset_matches[1].split())
+
+    matched = (session.used_percent is not None) or (week.used_percent is not None)
+    return session, week, matched
 
 
 def _read_timeout_seconds(default: float = 12.0) -> float:
@@ -144,7 +185,13 @@ def _try_direct_usage_command(claude_cmd: list[str], timeout_seconds: float) -> 
 def _snapshot_from_clean_text(clean: str, fallback_error: str = "") -> UsageSnapshot:
     current_session = _parse_block(CURRENT_SESSION_RE, clean)
     current_week = _parse_block(CURRENT_WEEK_RE, clean)
-    found_used = "% used" in clean
+
+    if current_session.used_percent is None and current_week.used_percent is None:
+        fb_session, fb_week, matched = _parse_blocks_fallback(clean)
+        if matched:
+            current_session, current_week = fb_session, fb_week
+
+    found_used = ("% used" in clean) or ("% usado" in clean.lower()) or bool(re.search(r"\d{1,3}\s*%", clean))
     ok = bool(found_used and (current_session.used_percent is not None or current_week.used_percent is not None))
     return UsageSnapshot(
         ok=ok,
