@@ -5,9 +5,11 @@ dashboard.py - Local web dashboard served on localhost:8080.
 import json
 import os
 import sqlite3
+from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import unquote, urlparse
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 
@@ -73,6 +75,7 @@ def get_dashboard_data(db_path=DB_PATH):
             duration_min = 0
         sessions_all.append({
             "session_id":    r["session_id"][:8],
+            "session_id_full": r["session_id"],
             "project":       r["project_name"] or "unknown",
             "last":          (r["last_timestamp"] or "")[:16].replace("T", " "),
             "last_date":     (r["last_timestamp"] or "")[:10],
@@ -93,6 +96,236 @@ def get_dashboard_data(db_path=DB_PATH):
         "sessions_all":   sessions_all,
         "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+def _extract_text_parts(content):
+    if content is None:
+        return []
+    if isinstance(content, str):
+        return [content]
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type == "text" and item.get("text"):
+                parts.append(str(item["text"]))
+            elif item_type == "tool_use":
+                parts.append(f"[tool_use] {item.get('name') or 'unknown'}")
+            elif item_type == "tool_result":
+                nested = _extract_text_parts(item.get("content"))
+                if nested:
+                    parts.append("[tool_result]\n" + "\n".join(nested))
+            elif item.get("text"):
+                parts.append(str(item["text"]))
+        return parts
+    if isinstance(content, dict):
+        nested = content.get("content")
+        if nested is not None:
+            return _extract_text_parts(nested)
+        if content.get("text") is not None:
+            return [str(content.get("text"))]
+    return [str(content)]
+
+
+def _extract_message_text(record):
+    message = record.get("message", {})
+    if not isinstance(message, dict):
+        return ""
+    parts = _extract_text_parts(message.get("content"))
+    if not parts and message.get("text") is not None:
+        parts = [str(message.get("text"))]
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def find_transcript_path_for_session(session_id, db_path=DB_PATH):
+    if not db_path.exists():
+        return None
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""
+            SELECT path
+            FROM processed_files
+            ORDER BY mtime DESC
+        """).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        conn.close()
+
+    for row in rows:
+        filepath = Path(row["path"])
+        if not filepath.exists():
+            continue
+        try:
+            with open(filepath, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if record.get("sessionId") == session_id:
+                        return filepath
+        except OSError:
+            continue
+
+    return None
+
+
+def get_session_history(session_id, db_path=DB_PATH):
+    if not session_id:
+        return {"error": "Session ID is required."}
+
+    transcript_path = find_transcript_path_for_session(session_id, db_path=db_path)
+    if not transcript_path:
+        return {"error": "Session transcript not found."}
+
+    entries = []
+    message_index = {}
+
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if record.get("sessionId") != session_id:
+                    continue
+
+                role = record.get("type")
+                if role not in ("user", "assistant"):
+                    continue
+
+                timestamp = (record.get("timestamp") or "")[:19].replace("T", " ")
+                text = _extract_message_text(record) or "(no text content)"
+                message = record.get("message", {})
+                message_id = message.get("id") if isinstance(message, dict) else None
+                entry = {
+                    "role": role,
+                    "timestamp": timestamp,
+                    "text": text,
+                }
+
+                if message_id:
+                    if message_id in message_index:
+                        entries[message_index[message_id]] = entry
+                    else:
+                        message_index[message_id] = len(entries)
+                        entries.append(entry)
+                else:
+                    entries.append(entry)
+    except OSError as e:
+        return {"error": f"Could not read session transcript: {e}"}
+
+    if not entries:
+        return {"error": "No conversation entries found for this session."}
+
+    return {
+        "session_id": session_id,
+        "transcript_path": str(transcript_path),
+        "entries": entries,
+    }
+
+
+def render_session_history_html(session_data):
+    if "error" in session_data:
+        err = escape(session_data["error"])
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session History</title>
+<style>
+  body {{ background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }}
+  .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px; }}
+  h1 {{ font-size: 20px; margin-bottom: 12px; color: #d97757; }}
+  p {{ color: #8892a4; }}
+  a {{ color: #4f8ef7; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Session History</h1>
+  <p>{err}</p>
+  <p><a href="/">← Back to dashboard</a></p>
+</div>
+</body>
+</html>"""
+
+    rows = []
+    for entry in session_data["entries"]:
+        role = escape(entry["role"])
+        role_label = "User" if role == "user" else "Assistant"
+        timestamp = escape(entry["timestamp"] or "-")
+        text = escape(entry["text"])
+        row_html = f"""<article class="entry {role}">
+  <div class="entry-meta">
+    <span class="role">{role_label}</span>
+    <span class="time">{timestamp}</span>
+  </div>
+  <pre>{text}</pre>
+</article>"""
+        rows.append(row_html)
+
+    sid = escape(session_data["session_id"])
+    source = escape(session_data["transcript_path"])
+    content = "\n".join(rows)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session {sid}</title>
+<style>
+  :root {{
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #d97757;
+    --user: #4f8ef7;
+    --assistant: #4ade80;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+  .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
+  h1 {{ margin: 0 0 8px; font-size: 20px; color: var(--accent); }}
+  .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
+  .back {{ display: inline-block; margin-bottom: 16px; color: #4f8ef7; text-decoration: none; }}
+  .back:hover {{ text-decoration: underline; }}
+  .entry {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }}
+  .entry-meta {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }}
+  .entry .role {{ font-weight: 600; }}
+  .entry.user .role {{ color: var(--user); }}
+  .entry.assistant .role {{ color: var(--assistant); }}
+  .entry pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.45; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← Back to dashboard</a>
+  <h1>Session {sid}</h1>
+  <div class="meta">Source: {source}</div>
+  {content}
+</div>
+</body>
+</html>"""
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -166,6 +399,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .cost-na { color: var(--muted); font-family: monospace; font-size: 11px; }
   .num { font-family: monospace; }
   .muted { color: var(--muted); }
+  .session-link { color: var(--blue); text-decoration: none; }
+  .session-link:hover { text-decoration: underline; }
   .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .section-header .section-title { margin-bottom: 0; }
@@ -681,8 +916,9 @@ function renderSessionsTable(sessions) {
     const costCell = isBillable(s.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
       : `<td class="cost-na">n/a</td>`;
+    const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
     return `<tr>
-      <td class="muted" style="font-family:monospace">${esc(s.session_id)}&hellip;</td>
+      <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}" target="_blank" rel="noopener noreferrer">${esc(s.session_id)}&hellip;</a></td>
       <td>${esc(s.project)}</td>
       <td class="muted">${esc(s.last)}</td>
       <td class="muted">${esc(s.duration_min)}m</td>
@@ -895,17 +1131,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
+        parsed = urlparse(self.path)
+        if parsed.path in ("/", "/index.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
-
-        elif self.path == "/api/data":
+        elif parsed.path == "/api/data":
             data = get_dashboard_data()
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path.startswith("/session/"):
+            session_id = unquote(parsed.path[len("/session/"):]).strip()
+            session_data = get_session_history(session_id)
+            body = render_session_history_html(session_data).encode("utf-8")
+            status_code = 404 if "error" in session_data else 200
+            self.send_response(status_code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -915,7 +1161,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path == "/api/rescan":
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/rescan":
             # Full rebuild: delete DB and rescan from scratch
             if DB_PATH.exists():
                 DB_PATH.unlink()

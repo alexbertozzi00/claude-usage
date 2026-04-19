@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 from scanner import get_db, init_db, upsert_sessions, insert_turns
-from dashboard import get_dashboard_data, DashboardHandler, HTML_TEMPLATE
+from dashboard import get_dashboard_data, get_session_history, DashboardHandler, HTML_TEMPLATE
 
 try:
     from http.server import HTTPServer
@@ -84,12 +84,81 @@ class TestGetDashboardData(unittest.TestCase):
         data = get_dashboard_data(db_path=self.db_path)
         session = data["sessions_all"][0]
         self.assertEqual(len(session["session_id"]), 8)
+    def test_session_id_full_present(self):
+        data = get_dashboard_data(db_path=self.db_path)
+        session = data["sessions_all"][0]
+        self.assertEqual(session["session_id_full"], "sess-abc123")
 
     def test_session_duration_calculated(self):
         data = get_dashboard_data(db_path=self.db_path)
         session = data["sessions_all"][0]
         # 1 hour = 60 minutes
         self.assertEqual(session["duration_min"], 60.0)
+
+class TestSessionHistory(unittest.TestCase):
+    def setUp(self):
+        self.session_id = "sess-history-123"
+        self.tmpdb = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpdb.close()
+        self.db_path = Path(self.tmpdb.name)
+
+        self.tmpjsonl = tempfile.NamedTemporaryFile(
+            suffix=".jsonl", delete=False, mode="w", encoding="utf-8"
+        )
+        records = [
+            {
+                "type": "user",
+                "sessionId": self.session_id,
+                "timestamp": "2026-04-08T09:00:00Z",
+                "message": {"content": [{"type": "text", "text": "Olá, Claude"}]},
+            },
+            {
+                "type": "assistant",
+                "sessionId": self.session_id,
+                "timestamp": "2026-04-08T09:00:01Z",
+                "message": {
+                    "id": "msg-1",
+                    "content": [{"type": "text", "text": "Resposta parcial"}],
+                },
+            },
+            {
+                "type": "assistant",
+                "sessionId": self.session_id,
+                "timestamp": "2026-04-08T09:00:02Z",
+                "message": {
+                    "id": "msg-1",
+                    "content": [{"type": "text", "text": "Resposta final"}],
+                },
+            },
+        ]
+        for record in records:
+            self.tmpjsonl.write(json.dumps(record) + "\n")
+        self.tmpjsonl.close()
+
+        conn = get_db(self.db_path)
+        init_db(conn)
+        conn.execute(
+            "INSERT INTO processed_files (path, mtime, lines) VALUES (?, ?, ?)",
+            (self.tmpjsonl.name, os.path.getmtime(self.tmpjsonl.name), len(records)),
+        )
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+        os.unlink(self.tmpjsonl.name)
+
+    def test_get_session_history_returns_entries(self):
+        data = get_session_history(self.session_id, db_path=self.db_path)
+        self.assertNotIn("error", data)
+        self.assertEqual(data["session_id"], self.session_id)
+        self.assertEqual(len(data["entries"]), 2)
+        self.assertEqual(data["entries"][0]["role"], "user")
+        self.assertIn("Resposta final", data["entries"][1]["text"])
+
+    def test_get_session_history_missing_session(self):
+        data = get_session_history("sess-unknown", db_path=self.db_path)
+        self.assertIn("error", data)
 
 
 class TestDashboardHTTP(unittest.TestCase):
@@ -163,6 +232,10 @@ class TestHTMLTemplate(unittest.TestCase):
     def test_unknown_models_return_null(self):
         """Verify getPricing returns null for non-Anthropic models."""
         self.assertIn("return null;", HTML_TEMPLATE)
+
+    def test_template_has_session_link(self):
+        self.assertIn("session-link", HTML_TEMPLATE)
+        self.assertIn("encodeURIComponent(s.session_id_full)", HTML_TEMPLATE)
 
 
 class TestPricingParity(unittest.TestCase):
