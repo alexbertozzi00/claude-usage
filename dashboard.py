@@ -2483,7 +2483,7 @@ function renderTrendChart(daily) {
           pointRadius: 2,
         },
         {
-          label: 'Média móvel 7d',
+          label: 'Curva de tendência',
           data: avg7d,
           borderColor: 'rgba(217,119,87,1)',
           borderDash: [6, 4],
