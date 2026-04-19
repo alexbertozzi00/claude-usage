@@ -949,7 +949,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
   .disclaimer-banner {
-    margin: 0 24px;
+    margin: 10px 24px;
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -961,7 +961,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .disclaimer-banner strong { color: var(--text); }
 
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
-  .footer-content { max-width: 1400px; margin: 0 auto; }
+  .footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
   .footer-content p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 4px; }
   .footer-content p:last-child { margin-bottom: 0; }
   .footer-content a { color: var(--blue); text-decoration: none; }
@@ -1005,11 +1005,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
-</div>
-
-<div class="disclaimer-banner">
-  <strong>Aviso de cobertura:</strong> este painel exibe apenas sessões registradas localmente pelo Claude Code (CLI/terminal).
-  Sessões feitas via Claude Web ou aplicativo de desktop ainda não estão disponíveis.
 </div>
 
 <div class="container">
@@ -1089,6 +1084,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<div class="disclaimer-banner">
+  <strong>Aviso de cobertura:</strong> este painel exibe apenas sessões registradas localmente pelo Claude Code (CLI/terminal).
+  Sessões feitas via Claude Web ou aplicativo de desktop ainda não estão disponíveis.
+</div>
 
 <footer>
   <div class="footer-content">
