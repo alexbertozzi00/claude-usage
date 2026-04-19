@@ -1532,8 +1532,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-sep"></div>
   <div class="filter-label">Período</div>
   <div class="range-group">
-    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="24h" onclick="setRange('24h')">24h</button>
+    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -1894,25 +1894,6 @@ function getLatestDataDay() {
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
 }
 
-function getLatestDataTimestamp() {
-  if (!rawData) return null;
-
-  const fromSessions = (rawData.sessions_all || [])
-    .map(s => s.last_iso)
-    .filter(Boolean)
-    .map(ts => ts.replace("Z", "+00:00"));
-  const fromHourly = (rawData.hourly_by_model || [])
-    .map(r => (r.day && r.hour ? `${r.day}T${r.hour}:00:00+00:00` : null))
-    .filter(Boolean);
-
-  const allTs = fromSessions.concat(fromHourly)
-    .map(ts => new Date(ts))
-    .filter(dt => !Number.isNaN(dt.getTime()));
-  if (!allTs.length) return null;
-
-  return allTs.reduce((max, dt) => (dt > max ? dt : max), allTs[0]);
-}
-
 function getRangeDayCount(cutoff) {
   const latestDataDay = getLatestDataDay();
   if (!latestDataDay) return 1;
@@ -1936,9 +1917,11 @@ function getRangeDayCount(cutoff) {
 function getRangeCutoff(range) {
   if (range === 'all') return null;
 
-  // For 1d we want only the current data day (exclusive "today" view),
-  // not a rolling 24h window.
-  if (range === '1d') return getLatestDataDay();
+  // "Hoje": sempre usa o dia corrente em UTC (00:00-23:59), independente
+  // de qual seja o último dia presente no payload.
+  if (range === '1d') {
+    return new Date().toISOString().slice(0, 10);
+  }
   if (range === '24h') return null;
 
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
@@ -1954,9 +1937,9 @@ function getRangeCutoff(range) {
 
 function getRangeTimestampCutoff(range) {
   if (range !== '24h') return null;
-  const latestTs = getLatestDataTimestamp();
-  if (!latestTs) return null;
-  const cutoff = new Date(latestTs.getTime() - 24 * 60 * 60 * 1000);
+  // "24h": janela móvel das últimas 24 horas a partir de agora.
+  // Na prática, isso combina horas de hoje + ontem conforme o horário atual.
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return cutoff.toISOString();
 }
 
