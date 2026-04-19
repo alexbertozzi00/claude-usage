@@ -3,7 +3,6 @@
 import json
 import os
 import sqlite3
-import subprocess
 import tempfile
 import threading
 import unittest
@@ -16,7 +15,6 @@ from scanner import get_db, init_db, upsert_sessions, insert_turns
 from dashboard import (
     get_dashboard_data,
     get_sessions_for_hour,
-    get_usage_snapshot,
     get_session_history,
     rename_session,
     DashboardHandler,
@@ -309,15 +307,6 @@ class TestDashboardHTTP(unittest.TestCase):
             # Should have expected keys (or error if no DB)
             self.assertTrue("all_models" in data or "error" in data)
 
-    def test_api_usage_returns_json(self):
-        url = f"http://127.0.0.1:{self.port}/api/usage"
-        with urllib.request.urlopen(url) as resp:
-            self.assertEqual(resp.status, 200)
-            self.assertIn("application/json", resp.headers["Content-Type"])
-            data = json.loads(resp.read())
-            self.assertIn("ok", data)
-            self.assertIn("current_session", data)
-
     def test_hour_page_returns_html(self):
         url = f"http://127.0.0.1:{self.port}/hour/09"
         try:
@@ -424,65 +413,6 @@ class TestRenameSession(unittest.TestCase):
         self.assertFalse(result["ok"])
 
 
-class TestUsageSnapshot(unittest.TestCase):
-    @patch("dashboard.subprocess.run")
-    def test_usage_snapshot_retries_after_timeout(self, mock_run):
-        mock_run.side_effect = [
-            subprocess.TimeoutExpired(cmd=["claude", "/usage", "--json"], timeout=8),
-            subprocess.CompletedProcess(
-                args=["claude", "/usage"],
-                returncode=0,
-                stdout="Current session used 10% available 90% resets at tomorrow\nCurrent week used 20% available 80% resets at next monday",
-                stderr="",
-            ),
-        ]
-
-        data = get_usage_snapshot(timeout_seconds=8)
-        self.assertTrue(data["ok"])
-        self.assertEqual(data["current_session"]["used_percent"], 10.0)
-        self.assertEqual(data["current_week"]["available_percent"], 80.0)
-
-    @patch("dashboard.subprocess.run")
-    def test_usage_snapshot_returns_error_after_all_failures(self, mock_run):
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["claude", "/usage"], timeout=8)
-        data = get_usage_snapshot(timeout_seconds=8)
-        self.assertFalse(data["ok"])
-        self.assertIn("Falha ao capturar saída", data["error"])
-
-    @patch("dashboard.subprocess.run")
-    def test_usage_snapshot_parses_json_token_counts(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=["claude", "/usage", "--json"],
-            returncode=0,
-            stdout=json.dumps({
-                "current_session": {
-                    "used_percent": "12.5%",
-                    "available_percent": "87.5%",
-                    "used_tokens": "12345",
-                    "available_tokens": "87655",
-                    "limit_tokens": "100000",
-                    "resets_at": "2026-04-20T00:00:00Z",
-                },
-                "current_week": {
-                    "used_percent": 40,
-                    "available_percent": 60,
-                    "used_token_count": "400000",
-                    "remaining_tokens": "600000",
-                    "token_limit": "1000000",
-                    "resets_at": "2026-04-22T00:00:00Z",
-                },
-            }),
-            stderr="",
-        )
-        data = get_usage_snapshot(timeout_seconds=8)
-        self.assertTrue(data["ok"])
-        self.assertEqual(data["current_session"]["used_tokens"], 12345)
-        self.assertEqual(data["current_session"]["available_tokens"], 87655)
-        self.assertEqual(data["current_session"]["limit_tokens"], 100000)
-        self.assertEqual(data["current_week"]["used_tokens"], 400000)
-        self.assertEqual(data["current_week"]["available_tokens"], 600000)
-        self.assertEqual(data["current_week"]["limit_tokens"], 1000000)
-
 class TestHTMLTemplate(unittest.TestCase):
     def test_template_is_valid_html(self):
         self.assertIn("<!DOCTYPE html>", HTML_TEMPLATE)
@@ -508,9 +438,7 @@ class TestHTMLTemplate(unittest.TestCase):
     def test_template_has_session_link(self):
         self.assertIn("session-link", HTML_TEMPLATE)
 
-    def test_template_has_usage_panel(self):
-        self.assertIn("usage-panel-content", HTML_TEMPLATE)
-        self.assertIn("/api/usage", HTML_TEMPLATE)
+    def test_template_has_session_navigation_link(self):
         self.assertIn("encodeURIComponent(s.session_id_full)", HTML_TEMPLATE)
 
     def test_template_declares_renaming_session_state(self):
