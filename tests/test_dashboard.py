@@ -220,6 +220,10 @@ class TestDashboardHTTP(unittest.TestCase):
     def test_template_mentions_rename_api(self):
         self.assertIn("/api/session/rename", HTML_TEMPLATE)
 
+    def test_template_mentions_sessions_pagination(self):
+        self.assertIn('id="sessions-pager"', HTML_TEMPLATE)
+        self.assertIn("setSessionsPage", HTML_TEMPLATE)
+
     def test_404_for_unknown_path(self):
         url = f"http://127.0.0.1:{self.port}/nonexistent"
         try:

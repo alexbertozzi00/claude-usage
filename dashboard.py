@@ -937,6 +937,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .section-header .section-title { margin-bottom: 0; }
   .export-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; }
   .export-btn:hover { color: var(--text); border-color: var(--accent); }
+  .table-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+  .pager { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .pager-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .pager-btn:hover { color: var(--text); border-color: var(--accent); }
+  .pager-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pager-label { min-width: 100px; text-align: center; }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
   .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
@@ -1043,6 +1049,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </tr></thead>
       <tbody id="sessions-body"></tbody>
     </table>
+    <div id="sessions-pager" class="table-footer"></div>
   </div>
   <div class="table-card">
     <div class="section-header"><div class="section-title">Custo por Projeto</div><button class="export-btn" onclick="exportProjectsCSV()" title="Exportar todos os projetos para CSV">&#x2913; CSV</button></div>
@@ -1108,6 +1115,8 @@ let projectSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
+let sessionsPage = 1;
+const SESSIONS_PAGE_SIZE = 20;
 const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
@@ -1271,6 +1280,7 @@ function initThemeToggle() {
 
 function setRange(range) {
   selectedRange = range;
+  sessionsPage = 1;
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
   );
@@ -1334,6 +1344,7 @@ function onModelToggle(cb) {
   const label = cb.closest('label');
   if (cb.checked) { selectedModels.add(cb.value);    label.classList.add('checked'); }
   else            { selectedModels.delete(cb.value); label.classList.remove('checked'); }
+  sessionsPage = 1;
   updateURL();
   applyFilter();
 }
@@ -1342,6 +1353,7 @@ function selectAllModels() {
   document.querySelectorAll('#model-checkboxes input').forEach(cb => {
     cb.checked = true; selectedModels.add(cb.value); cb.closest('label').classList.add('checked');
   });
+  sessionsPage = 1;
   updateURL(); applyFilter();
 }
 
@@ -1349,6 +1361,7 @@ function clearAllModels() {
   document.querySelectorAll('#model-checkboxes input').forEach(cb => {
     cb.checked = false; selectedModels.delete(cb.value); cb.closest('label').classList.remove('checked');
   });
+  sessionsPage = 1;
   updateURL(); applyFilter();
 }
 
@@ -1364,6 +1377,7 @@ function updateURL() {
 
 // ── Session sort ───────────────────────────────────────────────────────────
 function setSessionSort(col) {
+  sessionsPage = 1;
   if (sessionSortCol === col) {
     sessionSortDir = sessionSortDir === 'desc' ? 'asc' : 'desc';
   } else {
@@ -1397,6 +1411,49 @@ function sortSessions(sessions) {
     if (av > bv) return sessionSortDir === 'desc' ? -1 : 1;
     return 0;
   });
+}
+
+function paginateSessions(items, page, pageSize) {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    page: safePage,
+    total,
+    totalPages,
+  };
+}
+
+function renderCurrentSessionsPage() {
+  const paged = paginateSessions(lastFilteredSessions, sessionsPage, SESSIONS_PAGE_SIZE);
+  sessionsPage = paged.page;
+  renderSessionsTable(paged.items);
+  renderSessionsPager(paged);
+}
+
+function setSessionsPage(nextPage) {
+  sessionsPage = nextPage;
+  renderCurrentSessionsPage();
+}
+
+function renderSessionsPager(paged) {
+  const el = document.getElementById('sessions-pager');
+  if (!el) return;
+  const hasRows = paged.total > 0;
+  const from = hasRows ? ((paged.page - 1) * SESSIONS_PAGE_SIZE + 1) : 0;
+  const to = hasRows ? (from + paged.items.length - 1) : 0;
+  el.innerHTML = `
+    <div>${hasRows ? `Mostrando ${from}-${to} de ${paged.total} sessões` : 'Nenhuma sessão encontrada para os filtros atuais.'}</div>
+    <div class="pager">
+      <button class="pager-btn" onclick="setSessionsPage(1)" ${paged.page <= 1 ? 'disabled' : ''}>&laquo; Primeira</button>
+      <button class="pager-btn" onclick="setSessionsPage(${paged.page - 1})" ${paged.page <= 1 ? 'disabled' : ''}>&lsaquo; Anterior</button>
+      <span class="pager-label">Página ${paged.page} de ${paged.totalPages}</span>
+      <button class="pager-btn" onclick="setSessionsPage(${paged.page + 1})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Próxima &rsaquo;</button>
+      <button class="pager-btn" onclick="setSessionsPage(${paged.totalPages})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Última &raquo;</button>
+    </div>
+  `;
 }
 
 // ── Aggregation & filtering ────────────────────────────────────────────────
@@ -1486,7 +1543,7 @@ function applyFilter() {
   renderProjectChart(byProject);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastByProject = sortProjects(byProject);
-  renderSessionsTable(lastFilteredSessions.slice(0, 20));
+  renderCurrentSessionsPage();
   renderModelCostTable(byModel);
   renderProjectCostTable(lastByProject.slice(0, 20));
 }
@@ -1659,7 +1716,7 @@ async function renameSession(sessionId) {
   }
 
   renamingSessions.add(sessionId);
-  renderSessionsTable(lastFilteredSessions.slice(0, 20));
+  renderCurrentSessionsPage();
   showToast('Salvando nome...', 'info');
   try {
     const resp = await fetch('/api/session/rename', {
@@ -1682,7 +1739,7 @@ async function renameSession(sessionId) {
     showToast(error.message || 'Erro ao salvar nome.', 'error');
   } finally {
     renamingSessions.delete(sessionId);
-    renderSessionsTable(lastFilteredSessions.slice(0, 20));
+    renderCurrentSessionsPage();
   }
 }
 
