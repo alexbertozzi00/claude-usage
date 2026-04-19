@@ -1589,8 +1589,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-sep"></div>
   <div class="filter-label">Período</div>
   <div class="range-group">
-    <button class="range-btn" data-range="24h" onclick="setRange('24h')">24h</button>
-    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
+    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">Hoje</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -1933,14 +1932,13 @@ const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6
 // ── Time range ─────────────────────────────────────────────────────────────
 const RANGE_LABELS = {
   '1d': 'Hoje',
-  '24h': 'Últimas 24 horas',
   '7d': 'Últimos 7 dias',
   '30d': 'Últimos 30 dias',
   '90d': 'Últimos 90 dias',
   '180d': 'Últimos 6 meses',
   'all': 'Período completo',
 };
-const RANGE_TICKS  = { '1d': 6, '24h': 8, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
+const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
 function getLatestDataDay() {
   if (!rawData) return null;
@@ -1972,6 +1970,7 @@ function getRangeDayCount(cutoff) {
 }
 
 function getRangeCutoff(range) {
+  if (range === '24h') range = '1d';
   if (range === 'all') return null;
 
   // "Hoje": sempre usa o dia corrente em UTC (00:00-23:59), independente
@@ -1979,8 +1978,6 @@ function getRangeCutoff(range) {
   if (range === '1d') {
     return new Date().toISOString().slice(0, 10);
   }
-  if (range === '24h') return null;
-
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
 
@@ -1993,16 +1990,13 @@ function getRangeCutoff(range) {
 }
 
 function getRangeTimestampCutoff(range) {
-  if (range !== '24h') return null;
-  // "24h": janela móvel das últimas 24 horas a partir de agora.
-  // Na prática, isso combina horas de hoje + ontem conforme o horário atual.
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  return cutoff.toISOString();
+  return null;
 }
 
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
-  return ['1d', '24h', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
+  if (p === '24h') return '1d';
+  return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
 function readURLTheme() {
@@ -2225,45 +2219,14 @@ function applyFilter() {
   const cutoff = getRangeCutoff(selectedRange);
   const cutoffTs = getRangeTimestampCutoff(selectedRange);
 
-  const is24h = selectedRange === '24h';
-  const cutoffTsMs = cutoffTs ? Date.parse(cutoffTs) : null;
   const filteredHourly = (rawData.hourly_by_model || []).filter(r => {
     if (!selectedModels.has(r.model)) return false;
-    if (is24h) {
-      const rowTs = Date.parse(`${r.day}T${r.hour}:00:00Z`);
-      return Number.isFinite(rowTs) && rowTs >= cutoffTsMs;
-    }
     return !cutoff || r.day >= cutoff;
   });
 
-  // Filter daily rows by model + date range (24h is aggregated from hourly)
-  const filteredDaily = is24h
-    ? (() => {
-      const byDayModel = {};
-      for (const r of filteredHourly) {
-        const key = `${r.day}__${r.model}`;
-        if (!byDayModel[key]) {
-          byDayModel[key] = {
-            day: r.day,
-            model: r.model,
-            input: 0,
-            output: 0,
-            cache_read: 0,
-            cache_creation: 0,
-            turns: 0,
-          };
-        }
-        byDayModel[key].input += r.input || 0;
-        byDayModel[key].output += r.output || 0;
-        byDayModel[key].cache_read += r.cache_read || 0;
-        byDayModel[key].cache_creation += r.cache_creation || 0;
-        byDayModel[key].turns += r.turns || 0;
-      }
-      return Object.values(byDayModel);
-    })()
-    : rawData.daily_by_model.filter(r =>
-      selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
-    );
+  const filteredDaily = rawData.daily_by_model.filter(r =>
+    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+  );
 
   // Daily chart: aggregate by day
   const dailyMap = {};
@@ -2292,10 +2255,6 @@ function applyFilter() {
   // Filter sessions by model + date range
   const filteredSessions = rawData.sessions_all.filter(s => {
     if (!selectedModels.has(s.model)) return false;
-    if (is24h) {
-      const sessionTs = Date.parse((s.last_iso || '').replace("Z", "+00:00"));
-      return Number.isFinite(sessionTs) && sessionTs >= cutoffTsMs;
-    }
     return !cutoff || s.last_date >= cutoff;
   });
 
@@ -2483,7 +2442,7 @@ function renderTrendChart(daily) {
           pointRadius: 2,
         },
         {
-          label: 'Média móvel 7d',
+          label: 'Curva de tendência',
           data: avg7d,
           borderColor: 'rgba(217,119,87,1)',
           borderDash: [6, 4],
