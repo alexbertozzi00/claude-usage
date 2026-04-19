@@ -1098,8 +1098,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <p>
       GitHub (fork): <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">https://github.com/alexbertozzi00/claude-usage</a>
       <br>
-      Este dashboard é um fork do projeto original <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>.
-      <br>
       Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Licença: MIT
     </p>
   </div>
