@@ -64,8 +64,18 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("all_models", data)
         self.assertIn("daily_by_model", data)
         self.assertIn("hourly_by_model", data)
+        self.assertIn("project_daily", data)
         self.assertIn("sessions_all", data)
         self.assertIn("generated_at", data)
+
+    def test_project_daily_populated(self):
+        data = get_dashboard_data(db_path=self.db_path)
+        self.assertGreater(len(data["project_daily"]), 0)
+        row = data["project_daily"][0]
+        self.assertEqual(row["project"], "myproject")
+        self.assertIn("day", row)
+        self.assertIn("model", row)
+        self.assertIn("output", row)
 
     def test_models_populated(self):
         data = get_dashboard_data(db_path=self.db_path)
