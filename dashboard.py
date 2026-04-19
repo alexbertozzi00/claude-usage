@@ -207,18 +207,21 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
 
     turns_rows = conn.execute("""
         SELECT
-            timestamp,
-            COALESCE(model, 'unknown') as model,
-            input_tokens,
-            output_tokens,
-            cache_read_tokens,
-            cache_creation_tokens,
-            COALESCE(has_tool_marker, 0) as has_tool_marker
-        FROM turns
+            t.timestamp as timestamp,
+            COALESCE(t.model, 'unknown') as model,
+            t.input_tokens as input_tokens,
+            t.output_tokens as output_tokens,
+            t.cache_read_tokens as cache_read_tokens,
+            t.cache_creation_tokens as cache_creation_tokens,
+            COALESCE(t.has_tool_marker, 0) as has_tool_marker,
+            COALESCE(s.project_name, 'unknown') as project_name
+        FROM turns t
+        LEFT JOIN sessions s ON s.session_id = t.session_id
     """).fetchall()
 
     daily_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
     hourly_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
+    project_daily_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
 
     for row in turns_rows:
         local_dt = _to_local_datetime(row["timestamp"], local_tz=local_tz)
@@ -227,6 +230,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         day = local_dt.strftime("%Y-%m-%d")
         hour = local_dt.strftime("%H")
         model = row["model"] or "unknown"
+        project = _display_project_name(row["project_name"])
 
         daily = daily_acc[(day, model)]
         daily["input"] += row["input_tokens"] or 0
@@ -234,6 +238,13 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         daily["cache_read"] += row["cache_read_tokens"] or 0
         daily["cache_creation"] += row["cache_creation_tokens"] or 0
         daily["turns"] += 1
+
+        project_daily = project_daily_acc[(day, model, project)]
+        project_daily["input"] += row["input_tokens"] or 0
+        project_daily["output"] += row["output_tokens"] or 0
+        project_daily["cache_read"] += row["cache_read_tokens"] or 0
+        project_daily["cache_creation"] += row["cache_creation_tokens"] or 0
+        project_daily["turns"] += 1
 
         if (row["has_tool_marker"] or 0) == 0:
             hourly = hourly_acc[(day, hour, model)]
@@ -263,6 +274,17 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         "cache_creation": vals["cache_creation"],
         "turns": vals["turns"],
     } for (day, hour, model), vals in sorted(hourly_acc.items())]
+
+    project_daily = [{
+        "day": day,
+        "model": model,
+        "project": project,
+        "input": vals["input"],
+        "output": vals["output"],
+        "cache_read": vals["cache_read"],
+        "cache_creation": vals["cache_creation"],
+        "turns": vals["turns"],
+    } for (day, model, project), vals in sorted(project_daily_acc.items())]
 
     # ── All sessions (client filters by range and model) ──────────────────────
     session_rows = conn.execute("""
@@ -305,6 +327,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         "all_models":     all_models,
         "daily_by_model": daily_by_model,
         "hourly_by_model": hourly_by_model,
+        "project_daily":  project_daily,
         "sessions_all":   sessions_all,
         "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
@@ -2040,18 +2063,25 @@ function applyFilter() {
 
   const byModel = Object.values(modelMap).sort((a, b) => (b.input + b.output) - (a.input + a.output));
 
-  // By project: aggregate from filtered sessions
+  // By project: aggregate from per-day rows (avoids counting full session totals outside selected range)
+  const filteredProjectDaily = (rawData.project_daily || []).filter(r =>
+    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+  );
+
   const projMap = {};
+  for (const r of filteredProjectDaily) {
+    if (!projMap[r.project]) projMap[r.project] = { project: r.project, input: 0, output: 0, cache_read: 0, cache_creation: 0, turns: 0, sessions: 0, cost: 0 };
+    const p = projMap[r.project];
+    p.input          += r.input;
+    p.output         += r.output;
+    p.cache_read     += r.cache_read;
+    p.cache_creation += r.cache_creation;
+    p.turns          += r.turns;
+    p.cost += calcCost(r.model, r.input, r.output, r.cache_read, r.cache_creation);
+  }
+
   for (const s of filteredSessions) {
-    if (!projMap[s.project]) projMap[s.project] = { project: s.project, input: 0, output: 0, cache_read: 0, cache_creation: 0, turns: 0, sessions: 0, cost: 0 };
-    const p = projMap[s.project];
-    p.input          += s.input;
-    p.output         += s.output;
-    p.cache_read     += s.cache_read;
-    p.cache_creation += s.cache_creation;
-    p.turns          += s.turns;
-    p.sessions++;
-    p.cost += calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
+    if (projMap[s.project]) projMap[s.project].sessions++;
   }
   const byProject = Object.values(projMap).sort((a, b) => (b.input + b.output) - (a.input + a.output));
 
