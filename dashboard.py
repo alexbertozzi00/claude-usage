@@ -1747,10 +1747,11 @@ function getRangeCutoff(range) {
   if (range === '24h') range = '1d';
   if (range === 'all') return null;
 
-  // "Hoje": sempre usa o dia corrente em UTC (00:00-23:59), independente
-  // de qual seja o último dia presente no payload.
+  // "Hoje": ancorar no último dia disponível no payload para evitar
+  // gráficos vazios quando ainda não há dados no dia corrente.
   if (range === '1d') {
-    return new Date().toISOString().slice(0, 10);
+    const latestDataDay = getLatestDataDay();
+    return latestDataDay || new Date().toISOString().slice(0, 10);
   }
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
