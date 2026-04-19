@@ -6,16 +6,13 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import re
-import select
 import subprocess
 import time
 import webbrowser
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 
 
 ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
@@ -67,6 +64,75 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
 
 
 def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
+    if os.name == "nt":
+        return _capture_usage_windows(timeout_seconds=timeout_seconds)
+    return _capture_usage_posix(timeout_seconds=timeout_seconds)
+
+
+def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
+    """Fallback para Windows sem dependências externas (sem pty/termios)."""
+    try:
+        proc = subprocess.Popen(
+            ["claude"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError:
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error="Comando 'claude' não encontrado no PATH.",
+        )
+    try:
+        output, _ = proc.communicate("/usage\n/exit\n", timeout=timeout_seconds)
+    except Exception as exc:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error=f"Falha ao capturar saída do Claude CLI: {exc}",
+        )
+
+    raw = output or ""
+    clean = _strip_ansi(raw)
+
+    current_session = _parse_block(CURRENT_SESSION_RE, clean)
+    current_week = _parse_block(CURRENT_WEEK_RE, clean)
+    found_used = "% used" in clean
+    ok = bool(found_used and (current_session.used_percent is not None or current_week.used_percent is not None))
+
+    error = ""
+    if not ok:
+        error = (
+            "Não foi possível extrair os dados de /usage no Windows sem PTY. "
+            "Se persistir, execute em WSL/Git Bash ou instale um backend de terminal compatível com ConPTY."
+        )
+
+    return UsageSnapshot(
+        ok=ok,
+        captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        current_session=current_session,
+        current_week=current_week,
+        raw_excerpt=clean[-1200:],
+        error=error,
+    )
+
+
+def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
+    import pty
+    import select
+
     master_fd, slave_fd = pty.openpty()
 
     try:

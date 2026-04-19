@@ -101,6 +101,9 @@ LIVE_USAGE_PORT=9090 python cli.py live-usage
 python cli.py scan --projects-dir /caminho/para/transcripts
 ```
 
+> No Windows, `live-usage` roda em modo compatível sem `pty/termios`.
+> Se seu Claude CLI exigir TTY avançado, execute esse comando via WSL/Git Bash.
+
 O scanner é incremental — ele rastreia o caminho e o tempo de modificação de cada arquivo, então rodar `scan` novamente é rápido e processa apenas arquivos novos ou alterados.
 
 Por padrão, o scanner verifica `~/.claude/projects/` e também o diretório de integração Claude no Xcode (`~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/projects/`), ignorando os que não existirem. Use `--projects-dir` para varrer um local personalizado.
