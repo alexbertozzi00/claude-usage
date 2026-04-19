@@ -50,7 +50,7 @@ class TestGetDashboardData(unittest.TestCase):
             "session_id": "sess-abc123", "timestamp": "2026-04-08T09:30:00Z",
             "model": "claude-sonnet-4-6", "input_tokens": 500,
             "output_tokens": 200, "cache_read_tokens": 50,
-            "cache_creation_tokens": 20, "tool_name": None, "cwd": "/tmp",
+            "cache_creation_tokens": 20, "has_tool_marker": 0, "tool_name": None, "cwd": "/tmp",
         }]
         insert_turns(conn, turns)
         conn.commit()
@@ -102,6 +102,44 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertEqual(data["hour"], "09")
         self.assertEqual(len(data["sessions"]), 1)
         self.assertEqual(data["sessions"][0]["session_id_full"], "sess-abc123")
+
+    def test_hourly_ignores_tool_marker_turns(self):
+        conn = get_db(self.db_path)
+        upsert_sessions(conn, [{
+            "session_id": "sess-tool-only",
+            "project_name": "user/myproject",
+            "first_timestamp": "2026-04-08T09:10:00Z",
+            "last_timestamp": "2026-04-08T09:10:00Z",
+            "git_branch": "main",
+            "model": "claude-sonnet-4-6",
+            "total_input_tokens": 100,
+            "total_output_tokens": 50,
+            "total_cache_read": 0,
+            "total_cache_creation": 0,
+            "turn_count": 1,
+        }])
+        insert_turns(conn, [{
+            "session_id": "sess-tool-only",
+            "timestamp": "2026-04-08T09:10:00Z",
+            "model": "claude-sonnet-4-6",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "has_tool_marker": 1,
+            "tool_name": "Read",
+            "cwd": "/tmp",
+        }])
+        conn.commit()
+        conn.close()
+
+        data = get_dashboard_data(db_path=self.db_path)
+        total_turns = sum(r["turns"] for r in data["hourly_by_model"])
+        self.assertEqual(total_turns, 1)
+
+        hour_data = get_sessions_for_hour("09", cutoff="2026-04-01", models=["claude-sonnet-4-6"], db_path=self.db_path)
+        session_ids = {s["session_id_full"] for s in hour_data["sessions"]}
+        self.assertNotIn("sess-tool-only", session_ids)
 
     def test_missing_db_returns_error(self):
         data = get_dashboard_data(db_path=Path("/nonexistent/path/usage.db"))

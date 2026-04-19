@@ -117,6 +117,14 @@ def ensure_custom_name_column(conn):
         conn.commit()
 
 
+def ensure_has_tool_marker_column(conn):
+    try:
+        conn.execute("SELECT has_tool_marker FROM turns LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE turns ADD COLUMN has_tool_marker INTEGER DEFAULT 0")
+        conn.commit()
+
+
 def rename_session(session_id, custom_name, db_path=DB_PATH):
     if not session_id:
         return {"ok": False, "error": "session_id é obrigatório."}, 400
@@ -301,6 +309,7 @@ def get_dashboard_data(db_path=DB_PATH):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     ensure_custom_name_column(conn)
+    ensure_has_tool_marker_column(conn)
 
     # ── All models (for filter UI) ────────────────────────────────────────────
     model_rows = conn.execute("""
@@ -346,6 +355,7 @@ def get_dashboard_data(db_path=DB_PATH):
             SUM(output_tokens)         as output,
             COUNT(*)                   as turns
         FROM turns
+        WHERE COALESCE(has_tool_marker, 0) = 0
         GROUP BY day, hour, model
         ORDER BY day, hour, model
     """).fetchall()
@@ -412,9 +422,10 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    ensure_has_tool_marker_column(conn)
     try:
         model_filter = [m for m in (models or []) if m]
-        where = ["substr(t.timestamp, 12, 2) = ?"]
+        where = ["substr(t.timestamp, 12, 2) = ?", "COALESCE(t.has_tool_marker, 0) = 0"]
         params = [hour]
         if cutoff:
             where.append("substr(t.timestamp, 1, 10) >= ?")
