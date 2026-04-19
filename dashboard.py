@@ -1553,12 +1553,16 @@ function applyFilter() {
   const peakDay = daily.length
     ? daily.reduce((best, row) => ((row.input + row.output) > (best.input + best.output) ? row : best), daily[0])
     : null;
+  const nonZeroDaily = daily.filter(row => (row.input + row.output) > 0);
+  const lowDay = nonZeroDaily.length
+    ? nonZeroDaily.reduce((best, row) => ((row.input + row.output) < (best.input + best.output) ? row : best), nonZeroDaily[0])
+    : null;
 
   // Update daily chart title
   document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + getSelectedRangeLabel();
 
   renderStats(totals);
-  renderInsights(totals, byModel, byProject, peakDay);
+  renderInsights(totals, byModel, byProject, peakDay, lowDay);
   renderDailyChart(daily);
   renderTrendChart(daily);
   renderModelChart(byModel);
@@ -1591,7 +1595,7 @@ function renderStats(t) {
   `).join('');
 }
 
-function renderInsights(totals, byModel, byProject, peakDay) {
+function renderInsights(totals, byModel, byProject, peakDay, lowDay) {
   const container = document.getElementById('insights-list');
   if (!container) return;
 
@@ -1626,6 +1630,9 @@ function renderInsights(totals, byModel, byProject, peakDay) {
   }
   if (peakDay && peakDay.day) {
     insights.push(`Dia de pico: ${fmtDate(peakDay.day)} (${fmt(peakDay.input + peakDay.output)} tokens de entrada+saída).`);
+  }
+  if (lowDay && lowDay.day) {
+    insights.push(`Menor consumo diário (desconsiderando dias sem uso): ${fmtDate(lowDay.day)} (${fmt(lowDay.input + lowDay.output)} tokens de entrada+saída).`);
   }
 
   container.innerHTML = insights.map(item => `<li>${item}</li>`).join('') +
