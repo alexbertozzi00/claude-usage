@@ -959,6 +959,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     line-height: 1.5;
   }
   .disclaimer-banner strong { color: var(--text); }
+  .disclaimer-banner p { margin: 0; }
+  .disclaimer-banner p + p { margin-top: 8px; }
 
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
@@ -1086,17 +1088,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
 <div class="disclaimer-banner">
-  <strong>Aviso de cobertura:</strong> este painel exibe apenas sessões registradas localmente pelo Claude Code (CLI/terminal).
-  Sessões feitas via Claude Web ou aplicativo de desktop ainda não estão disponíveis.
+  <p><strong>Aviso de cobertura:</strong> este painel exibe apenas sessões registradas localmente pelo Claude Code (CLI/terminal).
+  Sessões feitas via Claude Web ou aplicativo de desktop ainda não estão disponíveis.</p>
+  <p><strong>Disclaimer de custo:</strong> estimativas de custo baseadas nos preços da API da Anthropic (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) em abril de 2026. Apenas modelos contendo <em>opus</em>, <em>sonnet</em> ou <em>haiku</em> no nome são incluídos nos cálculos de custo. Custos reais para assinantes Max/Pro diferem do preço de API.</p>
 </div>
 
 <footer>
   <div class="footer-content">
-    <p>Estimativas de custo baseadas nos preços da API da Anthropic (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) em abril de 2026. Apenas modelos contendo <em>opus</em>, <em>sonnet</em> ou <em>haiku</em> no nome são incluídos nos cálculos de custo. Custos reais para assinantes Max/Pro diferem do preço de API.</p>
     <p>
       GitHub (fork): <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">https://github.com/alexbertozzi00/claude-usage</a>
-      <br>
-      Este dashboard é um fork do projeto original <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>.
       <br>
       Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Licença: MIT
     </p>
