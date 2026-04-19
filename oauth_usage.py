@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _USAGE_CACHE: dict[str, Any] = {
     "expires_at": 0.0,
     "last_success": None,
+    "last_snapshot": None,
 }
 
 
@@ -86,6 +87,27 @@ def _resolve_access_token(access_token: str | None) -> str:
         or (os.environ.get("CLAUDE_OAUTH_ACCESS_TOKEN") or "").strip()
         or _read_token_from_env_file()
     )
+
+
+def _get_cached_snapshot(now: float) -> dict[str, Any] | None:
+    snapshot = _USAGE_CACHE.get("last_snapshot")
+    expires_at = float(_USAGE_CACHE.get("expires_at") or 0)
+    if snapshot and expires_at > now:
+        cached = deepcopy(snapshot)
+        if cached.get("cache") == "miss":
+            cached["cache"] = "hit"
+        elif not cached.get("cache"):
+            cached["cache"] = "hit"
+        return cached
+    return None
+
+
+def _store_snapshot(snapshot: dict[str, Any], *, ttl_seconds: int, mark_success: bool = False) -> None:
+    _USAGE_CACHE["last_snapshot"] = deepcopy(snapshot)
+    _USAGE_CACHE["expires_at"] = time.time() + max(1, int(ttl_seconds))
+    if mark_success:
+        _USAGE_CACHE["last_success"] = deepcopy(snapshot)
+
 
 
 def _iso_now() -> str:
@@ -243,15 +265,17 @@ def get_oauth_usage_snapshot(
     token = _resolve_access_token(access_token)
     now = time.time()
 
-    if _USAGE_CACHE["last_success"] and _USAGE_CACHE["expires_at"] > now:
-        cached = deepcopy(_USAGE_CACHE["last_success"])
-        cached["cache"] = "hit"
-        return cached
+    cached_snapshot = _get_cached_snapshot(now)
+    if cached_snapshot:
+        return cached_snapshot
 
     if not token:
-        return _build_error_snapshot(
+        snapshot = _build_error_snapshot(
             "OAuth access token ausente. Defina CLAUDE_OAUTH_ACCESS_TOKEN no ambiente ou no arquivo .env."
         )
+        snapshot["cache"] = "miss"
+        _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
+        return snapshot
 
     req = request.Request(
         OAUTH_USAGE_URL,
@@ -272,8 +296,7 @@ def get_oauth_usage_snapshot(
         snapshot["httpStatus"] = status
         snapshot["cache"] = "miss"
 
-        _USAGE_CACHE["last_success"] = deepcopy(snapshot)
-        _USAGE_CACHE["expires_at"] = now + max(1, int(cache_ttl_seconds))
+        _store_snapshot(snapshot, ttl_seconds=cache_ttl_seconds, mark_success=True)
         return snapshot
 
     except error.HTTPError as http_err:
@@ -284,6 +307,22 @@ def get_oauth_usage_snapshot(
                 body = json.loads(body_text)
             except json.JSONDecodeError:
                 body = {"rawText": body_text}
+
+        if http_err.code == 401 and isinstance(body, dict):
+            err_obj = body.get("error") if isinstance(body.get("error"), dict) else {}
+            err_type = str(err_obj.get("type") or "")
+            err_msg = str(err_obj.get("message") or "")
+            if err_type == "authentication_error" and "not supported" in err_msg.lower():
+                snapshot = _build_error_snapshot(
+                    "OAuth authentication não suportada pelo endpoint /api/oauth/usage para este token.",
+                    raw=body,
+                    error_code=401,
+                )
+                snapshot["authUnsupported"] = True
+                snapshot["cache"] = "miss"
+                _store_snapshot(snapshot, ttl_seconds=min(300, max(30, int(cache_ttl_seconds))))
+                logger.warning("OAuth usage endpoint returned unsupported OAuth authentication (401)")
+                return snapshot
 
         if http_err.code == 429 and _USAGE_CACHE["last_success"]:
             cached = deepcopy(_USAGE_CACHE["last_success"])
@@ -296,11 +335,14 @@ def get_oauth_usage_snapshot(
             return cached
 
         logger.warning("OAuth usage request failed", extra={"event": "oauth_usage_http_error", "status": http_err.code})
-        return _build_error_snapshot(
+        snapshot = _build_error_snapshot(
             f"Falha ao consultar oauth usage (HTTP {http_err.code}).",
             raw=body or {},
             error_code=http_err.code,
         )
+        snapshot["cache"] = "miss"
+        _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
+        return snapshot
     except error.URLError as url_err:
         logger.warning("OAuth usage request failed due to network error: %s", url_err)
         if _USAGE_CACHE["last_success"]:
@@ -308,10 +350,16 @@ def get_oauth_usage_snapshot(
             cached["fallback"] = {"reason": "network_error"}
             cached["cache"] = "stale"
             return cached
-        return _build_error_snapshot(f"Erro de rede ao consultar oauth usage: {url_err}")
+        snapshot = _build_error_snapshot(f"Erro de rede ao consultar oauth usage: {url_err}")
+        snapshot["cache"] = "miss"
+        _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
+        return snapshot
     except json.JSONDecodeError as decode_err:
         logger.warning("OAuth usage response is not valid JSON: %s", decode_err)
-        return _build_error_snapshot("Resposta do oauth usage não é JSON válido.")
+        snapshot = _build_error_snapshot("Resposta do oauth usage não é JSON válido.")
+        snapshot["cache"] = "miss"
+        _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
+        return snapshot
     except Exception as exc:
         logger.exception("Unexpected error while fetching oauth usage")
         if _USAGE_CACHE["last_success"]:
@@ -319,4 +367,7 @@ def get_oauth_usage_snapshot(
             cached["fallback"] = {"reason": "unexpected_error"}
             cached["cache"] = "stale"
             return cached
-        return _build_error_snapshot(f"Erro inesperado ao consultar oauth usage: {exc}")
+        snapshot = _build_error_snapshot(f"Erro inesperado ao consultar oauth usage: {exc}")
+        snapshot["cache"] = "miss"
+        _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
+        return snapshot

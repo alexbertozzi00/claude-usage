@@ -52,6 +52,7 @@ class TestOAuthUsageFetch(unittest.TestCase):
     def setUp(self):
         oauth_usage._USAGE_CACHE["last_success"] = None
         oauth_usage._USAGE_CACHE["expires_at"] = 0
+        oauth_usage._USAGE_CACHE["last_snapshot"] = None
         os.environ.pop("CLAUDE_OAUTH_ACCESS_TOKEN", None)
 
     def tearDown(self):
@@ -157,6 +158,37 @@ class TestOAuthUsageFetch(unittest.TestCase):
 
         self.assertEqual(snapshot["currentWindowPercentage"], 14)
         self.assertEqual(snapshot["weeklyPercentage"], 28)
+    def test_401_auth_not_supported_returns_flag_and_caches_snapshot(self):
+        class _FakeHTTP401(Exception):
+            pass
+
+        body = {
+            "type": "error",
+            "error": {
+                "type": "authentication_error",
+                "message": "OAuth authentication is currently not supported.",
+            },
+        }
+
+        from urllib.error import HTTPError
+        import io
+
+        http_error = HTTPError(
+            url=oauth_usage.OAUTH_USAGE_URL,
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(json.dumps(body).encode("utf-8")),
+        )
+
+        with patch("oauth_usage.request.urlopen", side_effect=http_error):
+            first = oauth_usage.get_oauth_usage_snapshot(access_token="token", cache_ttl_seconds=60)
+            second = oauth_usage.get_oauth_usage_snapshot(access_token="token", cache_ttl_seconds=60)
+
+        self.assertTrue(first.get("authUnsupported"))
+        self.assertEqual(first["error"]["code"], 401)
+        self.assertEqual(first.get("cache"), "miss")
+        self.assertEqual(second.get("cache"), "hit")
 
 if __name__ == "__main__":
     unittest.main()
