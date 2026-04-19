@@ -304,13 +304,16 @@ def render_session_history_html(session_data):
   body {{ background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }}
   .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px; }}
   .toolbar {{ display: flex; justify-content: flex-end; margin-bottom: 12px; }}
+  .toolbar-actions {{ display: flex; align-items: center; gap: 8px; }}
   #theme-toggle-button {{
-    font-size: 17px;
     position: relative;
-    display: inline-block;
-    width: 7em;
+    display: flex;
+    align-items: center;
+    width: 59px;
+    height: 35px;
     cursor: pointer;
   }}
+  #theme-toggle-button svg {{ display: block; }}
   #toggle {{
     opacity: 0;
     width: 0;
@@ -340,6 +343,7 @@ def render_session_history_html(session_data):
 <body>
 <div class="wrap">
   <div class="toolbar">
+    <div class="toolbar-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -387,6 +391,7 @@ def render_session_history_html(session_data):
         </g>
       </svg>
     </label>
+    </div>
   </div>
   <h1>Session History</h1>
   <p>{err}</p>
@@ -472,17 +477,20 @@ def render_session_history_html(session_data):
   body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
   .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
   .topbar {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }}
+  .topbar-actions {{ display: flex; align-items: center; gap: 8px; }}
   h1 {{ margin: 0 0 8px; font-size: 20px; color: var(--accent); }}
   .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
   .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
   .back:hover {{ text-decoration: underline; }}
   #theme-toggle-button {{
-    font-size: 17px;
     position: relative;
-    display: inline-block;
-    width: 7em;
+    display: flex;
+    align-items: center;
+    width: 59px;
+    height: 35px;
     cursor: pointer;
   }}
+  #theme-toggle-button svg {{ display: block; }}
   #toggle {{
     opacity: 0;
     width: 0;
@@ -514,6 +522,7 @@ def render_session_history_html(session_data):
 <body>
 <div class="wrap">
   <div class="topbar">
+    <div class="topbar-actions">
     <a class="back" href="/">← Back to dashboard</a>
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
       <input type="checkbox" id="toggle">
@@ -526,6 +535,7 @@ def render_session_history_html(session_data):
         </g>
       </svg>
     </label>
+    </div>
   </div>
   <h1>Session {sid}</h1>
   <div class="meta">Source: {source}</div>
@@ -600,13 +610,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
   #theme-toggle-button {
     /* font-size: 17px; */
     position: relative;
-    display: inline-block;
+    display: flex;
+    align-items: center;
     width: 59px;
+    height: 35px;
     cursor: pointer;
   }
+  #theme-toggle-button svg { display: block; }
   #toggle {
     opacity: 0;
     width: 0;
@@ -627,7 +641,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #toggle:checked + svg #cloud { opacity: 0; }
   #stars { opacity: 0; }
   #toggle:checked + svg #stars { opacity: 1; }
-  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; }
+  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; height: 32px; display: inline-flex; align-items: center; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -702,6 +716,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <h1>Claude Code Usage Dashboard</h1>
   <div class="meta" id="meta">Loading...</div>
   <div class="header-controls">
+    <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -714,6 +729,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </svg>
     </label>
     <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+    </div>
   </div>
 </header>
 
