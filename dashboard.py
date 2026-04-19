@@ -1059,6 +1059,7 @@ let projectSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
+const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
 let autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
@@ -1156,13 +1157,26 @@ const RANGE_LABELS = {
 };
 const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
+function getLatestDataDay() {
+  if (!rawData) return null;
+  const fromSessions = (rawData.sessions_all || []).map(s => s.last_date).filter(Boolean);
+  const fromDaily = (rawData.daily_by_model || []).map(r => r.day).filter(Boolean);
+  const allDays = fromSessions.concat(fromDaily);
+  if (!allDays.length) return null;
+  return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
+}
+
 function getRangeCutoff(range) {
   if (range === 'all') return null;
   const daysByRange = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+
+  // Use the latest day present in payload as reference. This avoids empty
+  // dashboards when the client clock/timezone is skewed relative to data.
+  const latestDataDay = getLatestDataDay();
+  const base = latestDataDay ? new Date(latestDataDay + 'T00:00:00Z') : new Date();
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
 }
 
 function readURLRange() {
@@ -1229,9 +1243,19 @@ function modelPriority(m) {
 
 function readURLModels(allModels) {
   const param = new URLSearchParams(window.location.search).get('models');
-  if (!param) return new Set(allModels.filter(m => isBillable(m)));
+  const billable = allModels.filter(m => isBillable(m));
+
+  // Default behavior: prioritize billable Claude models for cost visibility.
+  // If none exist, fall back to all models to avoid an empty dashboard.
+  if (!param) return new Set((billable.length ? billable : allModels));
+
+  // URL-pinned selection (models=...)
   const fromURL = new Set(param.split(',').map(s => s.trim()).filter(Boolean));
-  return new Set(allModels.filter(m => fromURL.has(m)));
+  const matched = allModels.filter(m => fromURL.has(m));
+  if (matched.length) return new Set(matched);
+
+  // If URL selection is stale (no matching models), gracefully fallback.
+  return new Set((billable.length ? billable : allModels));
 }
 
 function isDefaultModelSelection(allModels) {
