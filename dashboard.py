@@ -423,8 +423,10 @@ def render_session_history_html(session_data):
         role = escape(entry["role"])
         role_label = "Usuário" if role == "user" else "Assistente"
         timestamp = escape(entry["timestamp"] or "-")
-        text = escape(entry["text"])
-        row_html = f"""<article class="entry {role}">
+        raw_text = entry["text"] or ""
+        text = escape(raw_text)
+        tool_marker_class = " tool-message" if "[tool_" in raw_text.lower() else ""
+        row_html = f"""<article class="entry {role}{tool_marker_class}">
   <div class="entry-meta">
     <span class="role">{role_label}</span>
     <span class="time">{timestamp}</span>
@@ -475,9 +477,48 @@ def render_session_history_html(session_data):
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
-  .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
+  .wrap {{ width: min(1100px, 100%); margin: 0 auto; padding: clamp(16px, 3vw, 28px); }}
+  .panel {{ background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: clamp(14px, 2.4vw, 24px); }}
   .topbar {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }}
-  .topbar-actions {{ display: flex; align-items: center; gap: 8px; }}
+  .topbar-actions {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }}
+  .hide-tools {{ display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }}
+  .hide-tools label {{ display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }}
+  .hide-tools input {{ width: 14px; height: 14px; accent-color: var(--link); cursor: pointer; }}
+  .tooltip {{
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: help;
+  }}
+  .tooltip-text {{
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(320px, 70vw);
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity .18s ease, transform .18s ease;
+    z-index: 20;
+  }}
+  .tooltip:hover .tooltip-text, .tooltip:focus-within .tooltip-text {{
+    opacity: 1;
+    transform: translateY(0);
+  }}
   h1 {{ margin: 0 0 8px; font-size: 20px; color: var(--accent); }}
   .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
   .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
@@ -517,12 +558,25 @@ def render_session_history_html(session_data):
   .entry.user .role {{ color: var(--entry-user-text); background: var(--entry-user-bg); }}
   .entry.assistant .role {{ color: var(--entry-assistant-text); background: var(--entry-assistant-bg); }}
   .entry pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.45; }}
+  body.hide-tools-enabled .entry.tool-message {{ display: none; }}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="panel">
   <div class="topbar">
     <a class="back" href="/">← Voltar ao painel</a>
+    <div class="topbar-actions">
+    <div class="hide-tools">
+      <label for="hide-tools-toggle">
+        <input type="checkbox" id="hide-tools-toggle">
+        <span>Ocultar tools</span>
+      </label>
+      <span class="tooltip" tabindex="0" aria-label="Ajuda sobre ocultar tools">
+        ?
+        <span class="tooltip-text">Oculta mensagens que contenham [tool_*], reduzindo poluição visual e facilitando a leitura da sessão.</span>
+      </span>
+    </div>
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -539,9 +593,11 @@ def render_session_history_html(session_data):
   <h1>Sessão {sid}</h1>
   <div class="meta">Origem: {source}</div>
   {content}
+  </div>
 </div>
 <script>
   const THEME_STORAGE_KEY = 'claude_usage_theme';
+  const HIDE_TOOLS_STORAGE_KEY = 'claude_usage_hide_tools';
   function getPreferredTheme() {{
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
@@ -556,6 +612,16 @@ def render_session_history_html(session_data):
   applyTheme(getPreferredTheme());
   document.getElementById('toggle')?.addEventListener('change', (event) => {{
     applyTheme(event.target.checked ? 'dark' : 'light');
+  }});
+  function applyHideTools(enabled) {{
+    document.body.classList.toggle('hide-tools-enabled', enabled);
+    const hideToolsToggle = document.getElementById('hide-tools-toggle');
+    if (hideToolsToggle) hideToolsToggle.checked = enabled;
+    localStorage.setItem(HIDE_TOOLS_STORAGE_KEY, enabled ? '1' : '0');
+  }}
+  applyHideTools(localStorage.getItem(HIDE_TOOLS_STORAGE_KEY) === '1');
+  document.getElementById('hide-tools-toggle')?.addEventListener('change', (event) => {{
+    applyHideTools(Boolean(event.target.checked));
   }});
 </script>
 </body>
