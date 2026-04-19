@@ -15,6 +15,7 @@ from collections import defaultdict
 from urllib.parse import parse_qs, unquote, urlparse
 
 from layout_components import render_app_footer, render_app_header
+from oauth_usage import get_oauth_usage_snapshot
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
@@ -301,12 +302,15 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
 
     conn.close()
 
+    oauth_usage = get_oauth_usage_snapshot()
+
     return {
         "all_models":     all_models,
         "daily_by_model": daily_by_model,
         "hourly_by_model": hourly_by_model,
         "sessions_all":   sessions_all,
         "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "oauthUsage": oauth_usage,
     }
 
 
@@ -1566,7 +1570,11 @@ function updateMetaStatus() {
   const refreshLabel = isAutoRefreshPaused
     ? 'Atualização automática: pausada'
     : ('Atualização automática: ativa (em ' + autoRefreshCountdown + 's)');
-  meta.textContent = generatedLabel + ' \u00b7 ' + refreshLabel;
+  const oauth = rawData && rawData.oauthUsage ? rawData.oauthUsage : null;
+  const currentPct = oauth && oauth.currentWindowPercentage != null ? fmtPct(oauth.currentWindowPercentage) : '-';
+  const weeklyPct = oauth && oauth.weeklyPercentage != null ? fmtPct(oauth.weeklyPercentage) : '-';
+  const usageLabel = 'Uso OAuth (5h/7d): ' + currentPct + ' / ' + weeklyPct;
+  meta.textContent = generatedLabel + ' \u00b7 ' + refreshLabel + ' \u00b7 ' + usageLabel;
 }
 
 function updateAutoRefreshToggleUI() {
@@ -2077,7 +2085,7 @@ function applyFilter() {
   // Update daily chart title
   document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + getSelectedRangeLabel();
 
-  renderStats(totals);
+  renderStats(totals, rawData.oauthUsage);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
   renderDailyChart(daily);
   updateTrendChartVisibility();
@@ -2100,7 +2108,7 @@ function applyFilter() {
 }
 
 // ── Renderers ──────────────────────────────────────────────────────────────
-function renderStats(t) {
+function renderStats(t, oauthUsage) {
   const rangeLabel = getSelectedRangeLabel().toLowerCase();
   const stats = [
     { label: 'Sessões',       value: t.sessions.toLocaleString(), sub: rangeLabel },
@@ -2109,6 +2117,8 @@ function renderStats(t) {
     { label: 'Tokens de Saída',  value: fmt(t.output),               sub: rangeLabel },
     { label: 'Leitura de Cache',     value: fmt(t.cache_read),           sub: 'do cache de prompt' },
     { label: 'Criação de Cache', value: fmt(t.cache_creation),       sub: 'gravações no cache de prompt' },
+    { label: 'Janela Atual (5h)', value: fmtPct(oauthUsage?.currentWindowPercentage), sub: 'endpoint oauth usage' },
+    { label: 'Semana (7d)', value: fmtPct(oauthUsage?.weeklyPercentage), sub: 'endpoint oauth usage' },
     { label: 'Custo Estimado',      value: fmtCostBig(t.cost),          sub: 'preço de API, abr/2026', color: cssVar('--green') },
   ];
   document.getElementById('stats-row').innerHTML = stats.map(s => `

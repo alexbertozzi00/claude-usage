@@ -66,6 +66,7 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("hourly_by_model", data)
         self.assertIn("sessions_all", data)
         self.assertIn("generated_at", data)
+        self.assertIn("oauthUsage", data)
 
     def test_models_populated(self):
         data = get_dashboard_data(db_path=self.db_path)
