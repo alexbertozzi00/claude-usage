@@ -919,8 +919,15 @@ const TOKEN_COLORS = {
 const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6','#34d399','#60a5fa'];
 
 // ── Time range ─────────────────────────────────────────────────────────────
-const RANGE_LABELS = { '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias', '90d': 'Últimos 90 dias', 'all': 'Período completo' };
-const RANGE_TICKS  = { '7d': 7, '30d': 15, '90d': 13, 'all': 12 };
+const RANGE_LABELS = {
+  '1d': 'Último dia',
+  '7d': 'Últimos 7 dias',
+  '30d': 'Últimos 30 dias',
+  '90d': 'Últimos 90 dias',
+  '180d': 'Últimos 6 meses',
+  'all': 'Período completo',
+};
+const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
 function getRangeCutoff(range) {
   if (range === 'all') return null;
@@ -978,6 +985,10 @@ function setRange(range) {
   );
   updateURL();
   applyFilter();
+}
+
+function getSelectedRangeLabel() {
+  return RANGE_LABELS[selectedRange] || RANGE_LABELS['30d'];
 }
 
 // ── Model filter ───────────────────────────────────────────────────────────
@@ -1165,7 +1176,7 @@ function applyFilter() {
     : null;
 
   // Update daily chart title
-  document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + RANGE_LABELS[selectedRange];
+  document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + getSelectedRangeLabel();
 
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay);
@@ -1181,7 +1192,7 @@ function applyFilter() {
 
 // ── Renderers ──────────────────────────────────────────────────────────────
 function renderStats(t) {
-  const rangeLabel = RANGE_LABELS[selectedRange].toLowerCase();
+  const rangeLabel = getSelectedRangeLabel().toLowerCase();
   const stats = [
     { label: 'Sessões',       value: t.sessions.toLocaleString(), sub: rangeLabel },
     { label: 'Interações',          value: fmt(t.turns),                sub: rangeLabel },
