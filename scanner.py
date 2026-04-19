@@ -85,6 +85,8 @@ def project_name_from_cwd(cwd):
         return "unknown"
     # Normalize to forward slashes, take last 2 components
     parts = cwd.replace("\\", "/").rstrip("/").split("/")
+    if len(parts) >= 2 and parts[-2].lower() in {"documentos", "documents"}:
+        return parts[-1]
     if len(parts) >= 2:
         return "/".join(parts[-2:])
     return parts[-1] if parts else "unknown"
