@@ -14,6 +14,34 @@ from urllib.parse import unquote, urlparse
 DB_PATH = Path.home() / ".claude" / "usage.db"
 
 
+def _format_date(date_str):
+    """Convert YYYY-MM-DD -> dd/MM/YYYY when possible."""
+    if not date_str:
+        return ""
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return date_str
+
+
+def _format_timestamp(timestamp_str):
+    """Convert ISO timestamp -> dd/MM/YYYY HH:MM:SS when possible."""
+    if not timestamp_str:
+        return ""
+    try:
+        normalized = timestamp_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        return dt.strftime("%d/%m/%Y %H:%M:%S")
+    except Exception:
+        try:
+            # Fallback for plain YYYY-MM-DD HH:MM[:SS]
+            base = timestamp_str[:19].replace("T", " ")
+            fmt = "%Y-%m-%d %H:%M:%S" if len(base) >= 19 else "%Y-%m-%d %H:%M"
+            return datetime.strptime(base, fmt).strftime("%d/%m/%Y %H:%M:%S")
+        except Exception:
+            return timestamp_str
+
+
 def get_dashboard_data(db_path=DB_PATH):
     if not db_path.exists():
         return {"error": "Database not found. Run: python cli.py scan"}
@@ -77,7 +105,7 @@ def get_dashboard_data(db_path=DB_PATH):
             "session_id":    r["session_id"][:8],
             "session_id_full": r["session_id"],
             "project":       r["project_name"] or "unknown",
-            "last":          (r["last_timestamp"] or "")[:16].replace("T", " "),
+            "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
             "duration_min":  duration_min,
             "model":         r["model"] or "unknown",
@@ -94,7 +122,7 @@ def get_dashboard_data(db_path=DB_PATH):
         "all_models":     all_models,
         "daily_by_model": daily_by_model,
         "sessions_all":   sessions_all,
-        "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
 
 def _extract_text_parts(content):
@@ -209,7 +237,7 @@ def get_session_history(session_id, db_path=DB_PATH):
                 if role not in ("user", "assistant"):
                     continue
 
-                timestamp = (record.get("timestamp") or "")[:19].replace("T", " ")
+                timestamp = _format_timestamp(record.get("timestamp") or "")
                 text = _extract_message_text(record) or "(no text content)"
                 message = record.get("message", {})
                 message_id = message.get("id") if isinstance(message, dict) else None
@@ -587,6 +615,12 @@ function fmt(n) {
   if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
   return n.toLocaleString();
 }
+function fmtDate(isoDay) {
+  if (!isoDay || isoDay.length < 10) return isoDay || '';
+  const [y, m, d] = isoDay.slice(0, 10).split('-');
+  if (!y || !m || !d) return isoDay;
+  return `${d}/${m}/${y}`;
+}
 function fmtCost(c)    { return '$' + c.toFixed(4); }
 function fmtCostBig(c) { return '$' + c.toFixed(2); }
 
@@ -846,7 +880,7 @@ function renderDailyChart(daily) {
   charts.daily = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: daily.map(d => d.day),
+      labels: daily.map(d => fmtDate(d.day)),
       datasets: [
         { label: 'Input',          data: daily.map(d => d.input),          backgroundColor: TOKEN_COLORS.input,          stack: 'tokens' },
         { label: 'Output',         data: daily.map(d => d.output),         backgroundColor: TOKEN_COLORS.output,         stack: 'tokens' },
@@ -1164,10 +1198,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/rescan":
             # Full rebuild: delete DB and rescan from scratch
-            if DB_PATH.exists():
-                DB_PATH.unlink()
-            from scanner import scan
-            result = scan(verbose=False)
+            try:
+                if DB_PATH.exists():
+                    DB_PATH.unlink()
+                from scanner import scan
+                result = scan(verbose=False)
+            except Exception as e:
+                result = {
+                    "new": 0,
+                    "updated": 0,
+                    "skipped": 0,
+                    "turns": 0,
+                    "sessions": 0,
+                    "error": str(e),
+                }
             body = json.dumps(result).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
