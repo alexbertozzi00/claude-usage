@@ -41,6 +41,7 @@ class UsageSnapshot:
     captured_at: str
     current_session: UsageBlock
     current_week: UsageBlock
+    mode: str = "unknown"
     raw_excerpt: str = ""
     error: str = ""
 
@@ -65,7 +66,19 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
     )
 
 
-def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
+def _read_timeout_seconds(default: float = 12.0) -> float:
+    raw = (os.environ.get("LIVE_USAGE_TIMEOUT") or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+        return max(1.0, min(value, 120.0))
+    except Exception:
+        return default
+
+
+def capture_usage(timeout_seconds: float | None = None) -> UsageSnapshot:
+    timeout_seconds = float(timeout_seconds or _read_timeout_seconds())
     if os.name == "nt":
         return _capture_usage_windows(timeout_seconds=timeout_seconds)
     return _capture_usage_posix(timeout_seconds=timeout_seconds)
@@ -138,6 +151,7 @@ def _snapshot_from_clean_text(clean: str, fallback_error: str = "") -> UsageSnap
         captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         current_session=current_session,
         current_week=current_week,
+        mode="parsed",
         raw_excerpt=clean[-1200:],
         error="" if ok else (fallback_error or "Não foi possível extrair os dados de /usage."),
     )
@@ -159,6 +173,7 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
     if direct:
         snap = _snapshot_from_clean_text(direct)
         if snap.ok:
+            snap.mode = "direct"
             return snap
 
     try:
@@ -192,6 +207,7 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
+            mode="interactive-timeout",
             raw_excerpt=partial[-1200:],
             error=(
                 "Falha ao capturar saída do Claude CLI: timeout. "
@@ -204,18 +220,21 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
+            mode="interactive-error",
             error=f"Falha ao capturar saída do Claude CLI: {exc}",
         )
 
     raw = output or ""
     clean = _strip_ansi(raw)
-    return _snapshot_from_clean_text(
+    snap = _snapshot_from_clean_text(
         clean,
         fallback_error=(
             "Não foi possível extrair os dados de /usage no Windows sem PTY. "
             "Se persistir, execute em WSL/Git Bash ou instale um backend de terminal compatível com ConPTY."
         ),
     )
+    snap.mode = "interactive"
+    return snap
 
 
 def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
@@ -288,6 +307,7 @@ def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
+            mode="interactive-error",
             error=f"Falha ao capturar saída do Claude CLI: {exc}",
         )
     finally:
@@ -310,6 +330,7 @@ def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
         captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         current_session=current_session,
         current_week=current_week,
+        mode="interactive",
         raw_excerpt=clean[-1200:],
         error="" if ok else "Não foi possível extrair os dados de /usage.",
     )
@@ -370,6 +391,7 @@ async function loadUsage() {
   const meta = document.getElementById('meta');
   const s = data.current_session || {};
   const w = data.current_week || {};
+  const mode = data.mode || 'unknown';
 
   document.getElementById('session-avail').textContent = s.available_percent == null ? '-' : s.available_percent + '% disponível';
   document.getElementById('session-used').textContent = s.used_percent == null ? '' : ('Usado: ' + s.used_percent + '%');
@@ -381,7 +403,7 @@ async function loadUsage() {
 
   document.getElementById('raw').textContent = data.raw_excerpt || '';
   document.getElementById('error').textContent = data.error || '';
-  meta.textContent = 'Última captura: ' + (data.captured_at || '-') + (data.ok ? '' : ' (falha ao interpretar)');
+  meta.textContent = 'Última captura: ' + (data.captured_at || '-') + ' · modo: ' + mode + (data.ok ? '' : ' (falha ao interpretar)');
 }
 
 function reloadNow(){ loadUsage().catch(console.error); }

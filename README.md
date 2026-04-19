@@ -100,6 +100,9 @@ LIVE_USAGE_PORT=9090 python cli.py live-usage
 # Caminho/comando explícito do Claude CLI (útil quando não está no PATH)
 CLAUDE_BIN="C:\\Users\\seu_usuario\\AppData\\Roaming\\npm\\claude.cmd" python cli.py live-usage
 
+# Timeout de captura em segundos (1..120; padrão: 12)
+LIVE_USAGE_TIMEOUT=30 python cli.py live-usage
+
 # Varre um diretório de projetos personalizado
 python cli.py scan --projects-dir /caminho/para/transcripts
 ```
