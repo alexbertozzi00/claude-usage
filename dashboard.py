@@ -600,13 +600,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
   #theme-toggle-button {
     /* font-size: 17px; */
     position: relative;
-    display: inline-block;
+    display: flex;
+    align-items: center;
     width: 59px;
+    height: 35px;
     cursor: pointer;
   }
+  #theme-toggle-button svg { display: block; }
   #toggle {
     opacity: 0;
     width: 0;
@@ -627,7 +631,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #toggle:checked + svg #cloud { opacity: 0; }
   #stars { opacity: 0; }
   #toggle:checked + svg #stars { opacity: 1; }
-  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; }
+  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; height: 32px; display: inline-flex; align-items: center; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -702,6 +706,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <h1>Painel de Uso do Claude Code</h1>
   <div class="meta" id="meta">Carregando...</div>
   <div class="header-controls">
+    <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -725,8 +730,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-sep"></div>
   <div class="filter-label">Período</div>
   <div class="range-group">
+    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
+    <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
@@ -908,7 +915,8 @@ const RANGE_TICKS  = { '7d': 7, '30d': 15, '90d': 13, 'all': 12 };
 
 function getRangeCutoff(range) {
   if (range === 'all') return null;
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  const daysByRange = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
+  const days = daysByRange[range] || 30;
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
@@ -916,7 +924,7 @@ function getRangeCutoff(range) {
 
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
-  return ['7d', '30d', '90d', 'all'].includes(p) ? p : '30d';
+  return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
 function readURLTheme() {
