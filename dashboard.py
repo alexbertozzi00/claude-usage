@@ -117,6 +117,14 @@ def ensure_custom_name_column(conn):
         conn.commit()
 
 
+def ensure_has_tool_marker_column(conn):
+    try:
+        conn.execute("SELECT has_tool_marker FROM turns LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE turns ADD COLUMN has_tool_marker INTEGER DEFAULT 0")
+        conn.commit()
+
+
 def rename_session(session_id, custom_name, db_path=DB_PATH):
     if not session_id:
         return {"ok": False, "error": "session_id é obrigatório."}, 400
@@ -301,6 +309,7 @@ def get_dashboard_data(db_path=DB_PATH):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     ensure_custom_name_column(conn)
+    ensure_has_tool_marker_column(conn)
 
     # ── All models (for filter UI) ────────────────────────────────────────────
     model_rows = conn.execute("""
@@ -346,6 +355,7 @@ def get_dashboard_data(db_path=DB_PATH):
             SUM(output_tokens)         as output,
             COUNT(*)                   as turns
         FROM turns
+        WHERE COALESCE(has_tool_marker, 0) = 0
         GROUP BY day, hour, model
         ORDER BY day, hour, model
     """).fetchall()
@@ -412,9 +422,10 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    ensure_has_tool_marker_column(conn)
     try:
         model_filter = [m for m in (models or []) if m]
-        where = ["substr(t.timestamp, 12, 2) = ?"]
+        where = ["substr(t.timestamp, 12, 2) = ?", "COALESCE(t.has_tool_marker, 0) = 0"]
         params = [hour]
         if cutoff:
             where.append("substr(t.timestamp, 1, 10) >= ?")
@@ -939,6 +950,7 @@ def render_hour_sessions_html(data):
         header_html = render_app_header(
             "Sessões por Hora",
             subtitle="Resumo por faixa horária",
+            show_back_link=False,
             right_html=HEADER_THEME_TOGGLE_HTML,
         )
         return f"""<!DOCTYPE html>
@@ -948,17 +960,26 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora</title>
   <style>
-    :root {{
+    :root, [data-theme="dark"] {{
+      --bg: #0f1117;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --link: #6aa6ff;
     }}
+    [data-theme="light"] {{
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --link: #2563eb;
+    }}
 {COMMON_LAYOUT_STYLES}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:var(--bg); color:var(--text); }}
     .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
-    a {{ color:#6aa6ff; text-decoration:none; }}
+    a {{ color:var(--link); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     #theme-toggle-button {{
       position: relative;
@@ -1020,6 +1041,7 @@ def render_hour_sessions_html(data):
     header_html = render_app_header(
         f"Sessões no horário {hour}",
         subtitle=f"Período: {cutoff} · Modelos: {models_text}",
+        show_back_link=False,
         right_html=HEADER_THEME_TOGGLE_HTML,
     )
     rows = []
@@ -1053,22 +1075,31 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora ({hour})</title>
   <style>
-    :root {{
+    :root, [data-theme="dark"] {{
+      --bg: #0f1117;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --link: #6aa6ff;
     }}
+    [data-theme="light"] {{
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --link: #2563eb;
+    }}
 {COMMON_LAYOUT_STYLES}
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:#0f1117; color:#e2e8f0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:var(--bg); color:var(--text); }}
     .wrap {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
-    .meta {{ color:#94a3b8; margin-bottom: 12px; }}
-    a {{ color:#6aa6ff; text-decoration:none; }}
+    .meta {{ color:var(--muted); margin-bottom: 12px; }}
+    a {{ color:var(--link); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     table {{ width:100%; border-collapse:collapse; }}
-    th, td {{ border-bottom:1px solid #2a2d3a; padding:10px 12px; text-align:left; }}
-    th {{ color:#94a3b8; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+    th, td {{ border-bottom:1px solid var(--border); padding:10px 12px; text-align:left; }}
+    th {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
     #theme-toggle-button {{
       position: relative;
       display: flex;
@@ -2366,6 +2397,13 @@ function renderHourlyActivity(hourlyRows, cutoff) {
 }
 
 function renderSessionsTable(sessions) {
+  const formatSessionDuration = (durationMinRaw) => {
+    const durationMin = Number.parseFloat(durationMinRaw);
+    if (!Number.isFinite(durationMin) || durationMin < 0) return '0m';
+    if (durationMin >= 60) return `${(durationMin / 60).toFixed(1)} h`;
+    return `${durationMin}m`;
+  };
+
   document.getElementById('sessions-body').innerHTML = sessions.map(s => {
     const cost = calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
     const costCell = isBillable(s.model)
@@ -2379,7 +2417,7 @@ function renderSessionsTable(sessions) {
       <td>${esc(s.project)}</td>
       <td>${esc(sessionName)}</td>
       <td class="muted">${esc(s.last)}</td>
-      <td class="muted">${esc(s.duration_min)}m</td>
+      <td class="muted">${esc(formatSessionDuration(s.duration_min))}</td>
       <td><span class="model-tag">${esc(s.model)}</span></td>
       <td class="num">${s.turns}</td>
       <td class="num">${fmt(s.input)}</td>
