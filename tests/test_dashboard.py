@@ -70,7 +70,7 @@ class TestGetDashboardData(unittest.TestCase):
         data = get_dashboard_data(db_path=self.db_path)
         self.assertEqual(len(data["sessions_all"]), 1)
         session = data["sessions_all"][0]
-        self.assertEqual(session["project"], "user/myproject")
+        self.assertEqual(session["project"], "myproject")
         self.assertEqual(session["model"], "claude-sonnet-4-6")
         self.assertEqual(session["input"], 5000)
         self.assertEqual(session["custom_name"], "")

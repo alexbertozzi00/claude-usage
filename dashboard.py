@@ -46,6 +46,18 @@ def _format_timestamp(timestamp_str):
             return timestamp_str
 
 
+def _display_project_name(project_name):
+    """Return only the final directory/project component for cleaner UI labels."""
+    if not project_name:
+        return "unknown"
+
+    normalized = str(project_name).strip().rstrip("/\\")
+    if not normalized:
+        return "unknown"
+
+    return normalized.replace("\\", "/").split("/")[-1] or "unknown"
+
+
 def ensure_custom_name_column(conn):
     try:
         conn.execute("SELECT custom_name FROM sessions LIMIT 1")
@@ -156,7 +168,7 @@ def get_dashboard_data(db_path=DB_PATH):
         sessions_all.append({
             "session_id":    r["session_id"][:8],
             "session_id_full": r["session_id"],
-            "project":       r["project_name"] or "unknown",
+            "project":       _display_project_name(r["project_name"]),
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
