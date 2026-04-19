@@ -187,180 +187,6 @@ def rename_session(session_id, custom_name, db_path=DB_PATH):
         conn.close()
 
 
-def _parse_usage_percent(value):
-    if value is None:
-        return None
-    try:
-        cleaned = str(value).strip().replace("%", "").replace(",", ".")
-        if cleaned == "":
-            return None
-        return float(cleaned)
-    except Exception:
-        return None
-
-
-def _parse_usage_tokens(value):
-    if value is None:
-        return None
-    try:
-        cleaned = str(value).strip().lower()
-        cleaned = cleaned.replace("tokens", "").replace("token", "")
-        cleaned = cleaned.replace(",", "").replace("_", "").strip()
-        if cleaned == "":
-            return None
-        return int(float(cleaned))
-    except Exception:
-        return None
-
-
-def _extract_usage_block(payload, key):
-    block = payload.get(key, {}) or {}
-    return {
-        "used_percent": _parse_usage_percent(block.get("used_percent")),
-        "available_percent": _parse_usage_percent(block.get("available_percent")),
-        "used_tokens": _parse_usage_tokens(
-            block.get("used_tokens", block.get("used_token_count"))
-        ),
-        "available_tokens": _parse_usage_tokens(
-            block.get("available_tokens", block.get("remaining_tokens"))
-        ),
-        "limit_tokens": _parse_usage_tokens(
-            block.get("limit_tokens", block.get("token_limit"))
-        ),
-        "resets_at": str(block.get("resets_at") or ""),
-    }
-
-
-def _parse_usage_text(stdout):
-    text = (stdout or "").strip()
-    session_used = session_avail = week_used = week_avail = None
-    session_resets = week_resets = ""
-
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    for line in lines:
-        lower = line.lower()
-        if "session" in lower:
-            used_match = re.search(r"used[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
-            avail_match = re.search(r"(available|left|remaining)[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
-            reset_match = re.search(r"(reset[s]? at|resets?)[^0-9a-z]*([^\n]+)$", line, re.IGNORECASE)
-            if used_match:
-                session_used = _parse_usage_percent(used_match.group(1))
-            if avail_match:
-                session_avail = _parse_usage_percent(avail_match.group(2))
-            if reset_match:
-                session_resets = reset_match.group(2).strip()
-        if "week" in lower:
-            used_match = re.search(r"used[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
-            avail_match = re.search(r"(available|left|remaining)[^0-9]*([0-9]+(?:[.,][0-9]+)?)\s*%", lower)
-            reset_match = re.search(r"(reset[s]? at|resets?)[^0-9a-z]*([^\n]+)$", line, re.IGNORECASE)
-            if used_match:
-                week_used = _parse_usage_percent(used_match.group(1))
-            if avail_match:
-                week_avail = _parse_usage_percent(avail_match.group(2))
-            if reset_match:
-                week_resets = reset_match.group(2).strip()
-
-    return {
-        "current_session": {
-            "used_percent": session_used,
-            "available_percent": session_avail,
-            "used_tokens": None,
-            "available_tokens": None,
-            "limit_tokens": None,
-            "resets_at": session_resets,
-        },
-        "current_week": {
-            "used_percent": week_used,
-            "available_percent": week_avail,
-            "used_tokens": None,
-            "available_tokens": None,
-            "limit_tokens": None,
-            "resets_at": week_resets,
-        },
-    }
-
-
-def get_usage_snapshot(timeout_seconds=8):
-    commands = [
-        ["claude", "/usage", "--json"],
-        ["claude", "/usage"],
-    ]
-    errors = []
-    last_excerpt = ""
-
-    for cmd in commands:
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                stdin=subprocess.DEVNULL,
-            )
-            stdout = (proc.stdout or "").strip()
-            stderr = (proc.stderr or "").strip()
-            if stdout:
-                last_excerpt = stdout[:4000]
-            if proc.returncode != 0:
-                errors.append(f"{' '.join(cmd)} retornou código {proc.returncode}: {stderr or 'sem stderr'}")
-                continue
-
-            # Try JSON output first
-            try:
-                payload = json.loads(stdout)
-                if isinstance(payload, dict):
-                    return {
-                        "ok": True,
-                        "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "current_session": _extract_usage_block(payload, "current_session"),
-                        "current_week": _extract_usage_block(payload, "current_week"),
-                        "raw_excerpt": stdout[:2000],
-                        "error": "",
-                    }
-            except Exception:
-                pass
-
-            parsed = _parse_usage_text(stdout)
-            return {
-                "ok": True,
-                "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                "current_session": parsed["current_session"],
-                "current_week": parsed["current_week"],
-                "raw_excerpt": stdout[:2000],
-                "error": "",
-            }
-        except subprocess.TimeoutExpired:
-            errors.append(f"{' '.join(cmd)} expirou após {timeout_seconds}s")
-        except FileNotFoundError:
-            errors.append("Comando `claude` não encontrado no PATH.")
-            break
-        except Exception as exc:
-            errors.append(f"{' '.join(cmd)} falhou: {exc}")
-
-    return {
-        "ok": False,
-        "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "current_session": {
-            "used_percent": None,
-            "available_percent": None,
-            "used_tokens": None,
-            "available_tokens": None,
-            "limit_tokens": None,
-            "resets_at": "",
-        },
-        "current_week": {
-            "used_percent": None,
-            "available_percent": None,
-            "used_tokens": None,
-            "available_tokens": None,
-            "limit_tokens": None,
-            "resets_at": "",
-        },
-        "raw_excerpt": last_excerpt[:2000],
-        "error": "Falha ao capturar saída do Claude CLI. " + " | ".join(errors[:3]),
-    }
-
-
 def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado. Execute: python cli.py scan"}
@@ -1506,14 +1332,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hourly-track { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
   .hourly-fill { height: 100%; background: linear-gradient(90deg, #4f8ef7, #4ade80); }
   .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
-  .usage-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
-  .usage-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-  .usage-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: transparent; }
-  .usage-box h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
-  .usage-line { font-size: 13px; margin-bottom: 4px; color: var(--text); }
-  .usage-line .muted { font-size: 12px; }
-  .usage-error { color: #f87171; font-size: 12px; margin-top: 8px; }
-  .usage-hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
@@ -1601,17 +1419,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
-  <div class="usage-panel">
-    <div class="section-title">Uso da Cota Claude (/usage)</div>
-    <div id="usage-panel-content" class="usage-panel-grid"></div>
-    <div class="usage-hint">Painel adicional com dados de <code>claude /usage --json</code> (quando disponível no ambiente).</div>
-  </div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
   </div>
   <div class="charts-grid">
-    <div class="chart-card wide">
+    <div class="chart-card wide" id="trend-chart-card">
       <h2 id="daily-chart-title">Uso Diário de Tokens</h2>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
@@ -1879,45 +1692,6 @@ function cssVar(name)  { return getComputedStyle(document.documentElement).getPr
 function fmtPct(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
   return Number(n).toFixed(1) + '%';
-}
-
-function renderUsageBlock(title, block) {
-  const usedTokens = block?.used_tokens;
-  const availableTokens = block?.available_tokens;
-  const limitTokens = block?.limit_tokens;
-  const resetsAt = block?.resets_at || '-';
-  return `
-    <div class="usage-box">
-      <h3>${esc(title)}</h3>
-      <div class="usage-line"><strong>Gasto:</strong> ${fmtPct(block?.used_percent)} <span class="muted">(${fmt(usedTokens)} tokens)</span></div>
-      <div class="usage-line"><strong>Restante:</strong> ${fmtPct(block?.available_percent)} <span class="muted">(${fmt(availableTokens)} tokens)</span></div>
-      <div class="usage-line"><strong>Limite:</strong> ${fmt(limitTokens)} tokens</div>
-      <div class="usage-line"><strong>Reset:</strong> ${esc(String(resetsAt))}</div>
-    </div>
-  `;
-}
-
-function renderUsagePanel(snapshot) {
-  const el = document.getElementById('usage-panel-content');
-  if (!el) return;
-  if (!snapshot || !snapshot.ok) {
-    const err = snapshot?.error ? esc(String(snapshot.error)) : 'Não foi possível obter o snapshot de uso agora.';
-    el.innerHTML = `<div class="usage-error">${err}</div>`;
-    return;
-  }
-  el.innerHTML =
-    renderUsageBlock('Sessão atual', snapshot.current_session || {}) +
-    renderUsageBlock('Semana atual', snapshot.current_week || {});
-}
-
-async function loadUsageSnapshot() {
-  try {
-    const resp = await fetch('/api/usage');
-    const usage = await resp.json();
-    renderUsagePanel(usage);
-  } catch (e) {
-    renderUsagePanel({ ok: false, error: 'Falha ao carregar /api/usage.' });
-  }
 }
 
 // ── Chart colors ───────────────────────────────────────────────────────────
@@ -2305,7 +2079,15 @@ function applyFilter() {
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
   renderDailyChart(daily);
-  renderTrendChart(daily);
+  updateTrendChartVisibility();
+  if (selectedRange === '1d') {
+    if (charts.trend) {
+      charts.trend.destroy();
+      charts.trend = null;
+    }
+  } else {
+    renderTrendChart(daily);
+  }
   renderModelChart(byModel);
   renderProjectChart(byProject);
   renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
@@ -2475,6 +2257,13 @@ function renderTrendChart(daily) {
       }
     }
   });
+}
+
+function updateTrendChartVisibility() {
+  const trendCard = document.getElementById('trend-chart-card');
+  if (!trendCard) return;
+  const shouldHide = selectedRange === '1d';
+  trendCard.style.display = shouldHide ? 'none' : '';
 }
 
 function renderModelChart(byModel) {
@@ -2829,7 +2618,6 @@ async function loadData() {
     }
 
     applyFilter();
-    await loadUsageSnapshot();
   } catch(e) {
     console.error(e);
   }
@@ -2863,14 +2651,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
         elif parsed.path == "/api/data":
             data = get_dashboard_data()
-            body = json.dumps(data).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path == "/api/usage":
-            data = get_usage_snapshot()
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
