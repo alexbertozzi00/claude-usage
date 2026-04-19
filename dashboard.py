@@ -1517,6 +1517,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </tr></thead>
       <tbody id="project-cost-body"></tbody>
     </table>
+    <div id="project-cost-summary" class="table-footer"></div>
   </div>
 </div>
 
@@ -2126,7 +2127,8 @@ function applyFilter() {
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
-  renderProjectCostTable(lastByProject.slice(0, 20));
+  renderProjectCostTable(lastByProject);
+  renderProjectCostSummary(lastByProject);
 }
 
 // ── Renderers ──────────────────────────────────────────────────────────────
@@ -2554,6 +2556,13 @@ function renderProjectCostTable(byProject) {
       <td class="cost">${fmtCost(p.cost)}</td>
     </tr>`;
   }).join('');
+}
+
+function renderProjectCostSummary(allProjects) {
+  const summaryEl = document.getElementById('project-cost-summary');
+  if (!summaryEl) return;
+  const totalCost = allProjects.reduce((sum, p) => sum + (p.cost || 0), 0);
+  summaryEl.textContent = `Total de ${allProjects.length} projetos no filtro atual. Soma da tabela: ${fmtCost(totalCost)}.`;
 }
 
 // ── CSV Export ────────────────────────────────────────────────────────────
