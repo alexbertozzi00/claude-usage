@@ -68,6 +68,9 @@ python cli.py today
 # Show all-time statistics (in terminal)
 python cli.py stats
 
+# Show actionable insights (last 14 days)
+python cli.py insights
+
 # Scan + open browser dashboard at http://localhost:8080
 python cli.py dashboard
 
@@ -121,4 +124,4 @@ Costs are calculated using **Anthropic API pricing as of April 2026** ([claude.c
 |------|---------|
 | `scanner.py` | Parses JSONL transcripts, writes to `~/.claude/usage.db` |
 | `dashboard.py` | HTTP server + single-page HTML/JS dashboard |
-| `cli.py` | `scan`, `today`, `stats`, `dashboard` commands |
+| `cli.py` | `scan`, `today`, `stats`, `insights`, `dashboard` commands |
