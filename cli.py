@@ -7,6 +7,7 @@ Commands:
   stats     - Print all-time usage statistics
   insights  - Print actionable efficiency insights
   dashboard - Scan + open browser + start dashboard server
+  live-usage - Open a dedicated tab with Claude CLI /usage (short-term scraping)
 """
 
 import os
@@ -426,6 +427,12 @@ def cmd_dashboard(projects_dir=None):
     serve(host=host, port=port)
 
 
+def cmd_live_usage():
+    from live_usage import serve_live_usage
+
+    serve_live_usage()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 USAGE = """
@@ -437,6 +444,7 @@ Usage:
   python cli.py stats                        Show all-time statistics
   python cli.py insights                     Show actionable efficiency insights
   python cli.py dashboard [--projects-dir PATH]  Scan + start dashboard
+  python cli.py live-usage                   Open live /usage scraping dashboard
 """
 
 COMMANDS = {
@@ -445,6 +453,7 @@ COMMANDS = {
     "stats": cmd_stats,
     "insights": cmd_insights,
     "dashboard": cmd_dashboard,
+    "live-usage": cmd_live_usage,
 }
 
 def parse_projects_dir(args):

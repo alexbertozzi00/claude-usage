@@ -88,8 +88,14 @@ python cli.py insights
 # Executa scan + abre o dashboard no navegador em http://localhost:8080
 python cli.py dashboard
 
+# Abre uma aba dedicada que captura "claude" + "/usage" (scraping de curto prazo)
+python cli.py live-usage
+
 # Host e porta personalizados via variáveis de ambiente
 HOST=0.0.0.0 PORT=9000 python cli.py dashboard
+
+# Porta da aba de live usage (padrão: 8787)
+LIVE_USAGE_PORT=9090 python cli.py live-usage
 
 # Varre um diretório de projetos personalizado
 python cli.py scan --projects-dir /caminho/para/transcripts
@@ -139,3 +145,4 @@ Os custos são calculados com base nos **preços de API da Anthropic em abril de
 | `scanner.py` | Processa transcrições JSONL e grava em `~/.claude/usage.db` |
 | `dashboard.py` | Servidor HTTP + dashboard HTML/JS de página única |
 | `cli.py` | Comandos `scan`, `today`, `stats`, `insights`, `dashboard` |
+| `live_usage.py` | Captura `claude` + `/usage` via terminal e exibe em aba web dedicada |
