@@ -21,6 +21,7 @@ O Claude Code grava logs locais detalhados de uso — contagem de tokens, modelo
 - Inclusão de **logomarca** no projeto
 - **Labels traduzidos para PT-BR**
 - **Atualização automática a cada 30 segundos** no dashboard
+- **Pausa da atualização automática da página** (com opção de retomar)
 - Suporte a **tema claro e escuro**
 - Criação de **paginação na lista de sessões**
 
@@ -112,7 +113,7 @@ O Claude Code grava um arquivo JSONL por sessão em `~/.claude/projects/`. Cada 
 
 O `scanner.py` processa esses arquivos e armazena os dados em um banco SQLite em `~/.claude/usage.db`.
 
-O `dashboard.py` serve um dashboard de página única em `localhost:8080` com gráficos Chart.js (carregados via CDN). Ele se atualiza automaticamente a cada 30 segundos e suporta filtro por modelo com URLs que podem ser salvas/favoritadas. O endereço de bind e a porta podem ser sobrescritos com variáveis de ambiente `HOST` e `PORT` (padrões: `localhost`, `8080`).
+O `dashboard.py` serve um dashboard de página única em `localhost:8080` com gráficos Chart.js (carregados via CDN). Ele se atualiza automaticamente a cada 30 segundos, com opção de pausar/retomar a atualização automática da página, e suporta filtro por modelo com URLs que podem ser salvas/favoritadas. O endereço de bind e a porta podem ser sobrescritos com variáveis de ambiente `HOST` e `PORT` (padrões: `localhost`, `8080`).
 
 ---
 
