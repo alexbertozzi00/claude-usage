@@ -15,6 +15,7 @@ DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
 FAVICON_PATH = IMAGES_DIR / "favicon.svg"
 LOGOMARCA_PATH = IMAGES_DIR / "logomarca.png"
+MAX_CUSTOM_NAME_LENGTH = 80
 
 
 def _format_date(date_str):
@@ -45,12 +46,60 @@ def _format_timestamp(timestamp_str):
             return timestamp_str
 
 
+def ensure_custom_name_column(conn):
+    try:
+        conn.execute("SELECT custom_name FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE sessions ADD COLUMN custom_name TEXT")
+        conn.commit()
+
+
+def rename_session(session_id, custom_name, db_path=DB_PATH):
+    if not session_id:
+        return {"ok": False, "error": "session_id é obrigatório."}, 400
+
+    normalized = (custom_name or "").strip()
+    if len(normalized) > MAX_CUSTOM_NAME_LENGTH:
+        return {"ok": False, "error": f"custom_name deve ter no máximo {MAX_CUSTOM_NAME_LENGTH} caracteres."}, 400
+
+    if not db_path.exists():
+        return {"ok": False, "error": "Banco de dados não encontrado."}, 404
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_custom_name_column(conn)
+        existing = conn.execute(
+            "SELECT session_id FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if existing is None:
+            return {"ok": False, "error": "Sessão não encontrada."}, 404
+
+        value = normalized if normalized else None
+        conn.execute(
+            "UPDATE sessions SET custom_name = ? WHERE session_id = ?",
+            (value, session_id),
+        )
+        conn.commit()
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "custom_name": value,
+        }, 200
+    except sqlite3.Error as e:
+        return {"ok": False, "error": f"Erro ao renomear sessão: {e}"}, 500
+    finally:
+        conn.close()
+
+
 def get_dashboard_data(db_path=DB_PATH):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado. Execute: python cli.py scan"}
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    ensure_custom_name_column(conn)
 
     # ── All models (for filter UI) ────────────────────────────────────────────
     model_rows = conn.execute("""
@@ -91,7 +140,7 @@ def get_dashboard_data(db_path=DB_PATH):
         SELECT
             session_id, project_name, first_timestamp, last_timestamp,
             total_input_tokens, total_output_tokens,
-            total_cache_read, total_cache_creation, model, turn_count
+            total_cache_read, total_cache_creation, model, turn_count, custom_name
         FROM sessions
         ORDER BY last_timestamp DESC
     """).fetchall()
@@ -108,6 +157,7 @@ def get_dashboard_data(db_path=DB_PATH):
             "session_id":    r["session_id"][:8],
             "session_id_full": r["session_id"],
             "project":       r["project_name"] or "unknown",
+            "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
             "duration_min":  duration_min,
@@ -264,8 +314,25 @@ def get_session_history(session_id, db_path=DB_PATH):
     if not entries:
         return {"error": "Nenhuma mensagem foi encontrada para esta sessão."}
 
+    custom_name = ""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_custom_name_column(conn)
+        row = conn.execute(
+            "SELECT custom_name FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row and row["custom_name"]:
+            custom_name = row["custom_name"]
+    except sqlite3.Error:
+        custom_name = ""
+    finally:
+        conn.close()
+
     return {
         "session_id": session_id,
+        "custom_name": custom_name,
         "transcript_path": str(transcript_path),
         "entries": entries,
     }
@@ -439,16 +506,21 @@ def render_session_history_html(session_data):
 </article>"""
         rows.append(row_html)
 
-    sid = escape(session_data["session_id"])
+    sid_raw = session_data["session_id"]
+    sid = escape(sid_raw)
+    custom_name_raw = (session_data.get("custom_name") or "").strip()
+    custom_name = escape(custom_name_raw)
     source = escape(session_data["transcript_path"])
     content = "\n".join(rows)
+    title_text = custom_name if custom_name_raw else f"Sessão {sid_raw}"
+    custom_name_meta = f"<div class=\"meta\">ID da sessão: {sid}</div>" if custom_name_raw else ""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
-<title>Sessão {sid}</title>
+<title>{escape(title_text)}</title>
 <style>
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
@@ -595,7 +667,8 @@ def render_session_history_html(session_data):
     </label>
     </div>
   </div>
-  <h1>Sessão {sid}</h1>
+  <h1>{custom_name if custom_name_raw else f"Sessão {sid}"}</h1>
+  {custom_name_meta}
   <div class="meta">Origem: {source}</div>
   {content}
   </div>
@@ -803,6 +876,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .muted { color: var(--muted); }
   .session-link { color: var(--blue); text-decoration: none; }
   .session-link:hover { text-decoration: underline; }
+  .rename-btn { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+  .rename-btn:hover { color: var(--text); border-color: var(--accent); }
+  .rename-btn:disabled { opacity: 0.6; cursor: wait; }
+  .toast-container { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 9999; }
+  .toast { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+  .toast.success { border-color: #16a34a; }
+  .toast.error { border-color: #dc2626; }
+  .toast.info { border-color: var(--blue); }
   .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .section-header .section-title { margin-bottom: 0; }
@@ -930,6 +1011,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
 <footer>
   <div class="footer-content">
     <p>Estimativas de custo baseadas nos preços da API da Anthropic (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) em abril de 2026. Apenas modelos contendo <em>opus</em>, <em>sonnet</em> ou <em>haiku</em> no nome são incluídos nos cálculos de custo. Custos reais para assinantes Max/Pro diferem do preço de API.</p>
@@ -951,6 +1034,18 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || 'info');
+  el.textContent = String(message || '');
+  container.appendChild(el);
+  setTimeout(() => {
+    el.remove();
+  }, 2400);
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let rawData = null;
 let selectedModels = new Set();
@@ -964,6 +1059,8 @@ let projectSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
+const MAX_CUSTOM_NAME_LENGTH = 80;
+const renamingSessions = new Set();
 
 // ── Pricing (Anthropic API, April 2026) ────────────────────────────────────
 const PRICING = {
@@ -1442,10 +1539,12 @@ function renderSessionsTable(sessions) {
     const costCell = isBillable(s.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
       : `<td class="cost-na">não se aplica</td>`;
+    const displayName = s.custom_name || s.project;
     const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
+    const isSaving = renamingSessions.has(s.session_id_full);
     return `<tr>
       <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}" target="_blank" rel="noopener noreferrer">${esc(s.session_id)}&hellip;</a></td>
-      <td>${esc(s.project)}</td>
+      <td>${esc(displayName)}</td>
       <td class="muted">${esc(s.last)}</td>
       <td class="muted">${esc(s.duration_min)}m</td>
       <td><span class="model-tag">${esc(s.model)}</span></td>
@@ -1453,8 +1552,48 @@ function renderSessionsTable(sessions) {
       <td class="num">${fmt(s.input)}</td>
       <td class="num">${fmt(s.output)}</td>
       ${costCell}
+      <td><button class="rename-btn" onclick="renameSession('${esc(s.session_id_full)}')" ${isSaving ? 'disabled' : ''}>${isSaving ? 'Salvando...' : '✏️'}</button></td>
     </tr>`;
   }).join('');
+}
+
+async function renameSession(sessionId) {
+  const session = rawData?.sessions_all?.find(s => s.session_id_full === sessionId);
+  if (!session || renamingSessions.has(sessionId)) return;
+  const currentName = session.custom_name || '';
+  const newName = window.prompt('Digite o nome personalizado da sessão (vazio para remover):', currentName);
+  if (newName === null) return;
+  if (newName.length > MAX_CUSTOM_NAME_LENGTH) {
+    showToast(`Nome muito longo (máximo ${MAX_CUSTOM_NAME_LENGTH} caracteres).`, 'error');
+    return;
+  }
+
+  renamingSessions.add(sessionId);
+  renderSessionsTable(lastFilteredSessions.slice(0, 20));
+  showToast('Salvando nome...', 'info');
+  try {
+    const resp = await fetch('/api/session/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        custom_name: newName,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || 'Falha ao renomear sessão.');
+    }
+    session.custom_name = data.custom_name || '';
+    showToast('Nome da sessão atualizado.', 'success');
+    applyFilter();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'Erro ao salvar nome.', 'error');
+  } finally {
+    renamingSessions.delete(sessionId);
+    renderSessionsTable(lastFilteredSessions.slice(0, 20));
+  }
 }
 
 function setModelSort(col) {
@@ -1732,6 +1871,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 }
             body = json.dumps(result).encode("utf-8")
             self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/session/rename":
+            content_length = int(self.headers.get("Content-Length", "0") or "0")
+            body_raw = self.rfile.read(content_length) if content_length > 0 else b""
+            try:
+                payload = json.loads(body_raw.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            result, status_code = rename_session(
+                session_id=(payload.get("session_id") or "").strip() if isinstance(payload, dict) else "",
+                custom_name=(payload.get("custom_name") if isinstance(payload, dict) else ""),
+            )
+            body = json.dumps(result).encode("utf-8")
+            self.send_response(status_code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
