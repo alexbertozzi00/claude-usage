@@ -16,6 +16,7 @@ OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_CACHE_TTL_SECONDS = 45
 ENV_FILE_PATH = Path(__file__).resolve().parent / ".env"
+DOTENV_SEARCH_DEPTH = 5
 
 logger = logging.getLogger(__name__)
 
@@ -26,24 +27,54 @@ _USAGE_CACHE: dict[str, Any] = {
 }
 
 
+def _iter_dotenv_candidates() -> list[Path]:
+    candidates: list[Path] = []
+
+    explicit_path = os.environ.get("CLAUDE_OAUTH_DOTENV_PATH")
+    if explicit_path:
+        candidates.append(Path(explicit_path).expanduser())
+
+    cwd = Path.cwd().resolve()
+    candidates.append(cwd / ".env")
+    for parent in list(cwd.parents)[:DOTENV_SEARCH_DEPTH]:
+        candidates.append(parent / ".env")
+
+    candidates.append(ENV_FILE_PATH)
+
+    # Keep insertion order while deduplicating.
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
+
+
 def _read_token_from_env_file(path: Path | None = None) -> str:
-    env_path = path or ENV_FILE_PATH
+    env_paths = [path] if path else _iter_dotenv_candidates()
     try:
-        if not env_path.exists() or not env_path.is_file():
-            return ""
-        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
+        for env_path in env_paths:
+            if not env_path.exists() or not env_path.is_file():
                 continue
-            if line.startswith("export "):
-                line = line[len("export "):].strip()
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            if key.strip() != "CLAUDE_OAUTH_ACCESS_TOKEN":
-                continue
-            normalized = value.strip().strip('"').strip("'")
-            return normalized
+
+            content = env_path.read_text(encoding="utf-8", errors="replace")
+            for raw_line in content.splitlines():
+                line = raw_line.strip().lstrip("﻿")
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key.strip() != "CLAUDE_OAUTH_ACCESS_TOKEN":
+                    continue
+                normalized = value.strip().strip('"').strip("'")
+                if normalized:
+                    return normalized
     except OSError as exc:
         logger.warning("Falha ao ler .env para oauth usage: %s", exc)
     return ""

@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,6 +53,10 @@ class TestOAuthUsageFetch(unittest.TestCase):
         oauth_usage._USAGE_CACHE["last_success"] = None
         oauth_usage._USAGE_CACHE["expires_at"] = 0
         os.environ.pop("CLAUDE_OAUTH_ACCESS_TOKEN", None)
+
+    def tearDown(self):
+        os.environ.pop("CLAUDE_OAUTH_ACCESS_TOKEN", None)
+        os.environ.pop("CLAUDE_OAUTH_DOTENV_PATH", None)
 
     def test_returns_consistent_structure_when_token_missing(self):
         snapshot = oauth_usage.get_oauth_usage_snapshot(access_token="")
@@ -119,6 +124,39 @@ class TestOAuthUsageFetch(unittest.TestCase):
 
         self.assertEqual(captured["auth"], "Bearer env-token")
 
+    def test_reads_token_from_cwd_parent_dotenv(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            repo_root = temp_dir / "repo"
+            nested = repo_root / "app" / "run"
+            nested.mkdir(parents=True, exist_ok=True)
+            (repo_root / ".env").write_text("CLAUDE_OAUTH_ACCESS_TOKEN=parent-token\n", encoding="utf-8")
+
+            payload = {"five_hour": {"percent": 33}, "seven_day": {"percent": 66}}
+            with patch("oauth_usage.Path.cwd", return_value=nested):
+                with patch("oauth_usage.request.urlopen", return_value=_FakeHTTPResponse(payload)):
+                    snapshot = oauth_usage.get_oauth_usage_snapshot(access_token=None, cache_ttl_seconds=1)
+
+            self.assertEqual(snapshot["currentWindowPercentage"], 33)
+            self.assertEqual(snapshot["weeklyPercentage"], 66)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_reads_bom_prefixed_key_in_dotenv(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
+            tf.write("\ufeffCLAUDE_OAUTH_ACCESS_TOKEN=bom-token\n")
+            dotenv_path = Path(tf.name)
+
+        payload = {"five_hour": {"percent": 14}, "seven_day": {"percent": 28}}
+        try:
+            os.environ["CLAUDE_OAUTH_DOTENV_PATH"] = str(dotenv_path)
+            with patch("oauth_usage.request.urlopen", return_value=_FakeHTTPResponse(payload)):
+                snapshot = oauth_usage.get_oauth_usage_snapshot(access_token=None, cache_ttl_seconds=1)
+        finally:
+            dotenv_path.unlink(missing_ok=True)
+
+        self.assertEqual(snapshot["currentWindowPercentage"], 14)
+        self.assertEqual(snapshot["weeklyPercentage"], 28)
 
 if __name__ == "__main__":
     unittest.main()
