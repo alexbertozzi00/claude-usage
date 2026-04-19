@@ -59,6 +59,7 @@ class TestGetDashboardData(unittest.TestCase):
         data = get_dashboard_data(db_path=self.db_path)
         self.assertIn("all_models", data)
         self.assertIn("daily_by_model", data)
+        self.assertIn("hourly_by_model", data)
         self.assertIn("sessions_all", data)
         self.assertIn("generated_at", data)
 
@@ -82,6 +83,14 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("day", day)
         self.assertIn("model", day)
         self.assertIn("input", day)
+
+    def test_hourly_by_model_populated(self):
+        data = get_dashboard_data(db_path=self.db_path)
+        self.assertGreater(len(data["hourly_by_model"]), 0)
+        hour = data["hourly_by_model"][0]
+        self.assertIn("day", hour)
+        self.assertIn("hour", hour)
+        self.assertIn("turns", hour)
 
     def test_missing_db_returns_error(self):
         data = get_dashboard_data(db_path=Path("/nonexistent/path/usage.db"))
