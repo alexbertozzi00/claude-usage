@@ -64,6 +64,26 @@ def fmt(n):
 def fmt_cost(c):
     return f"${c:.4f}"
 
+
+def fmt_date(date_str):
+    """Convert YYYY-MM-DD to dd/MM/YYYY (fallback to input)."""
+    if not date_str:
+        return ""
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return date_str
+
+
+def fmt_timestamp(ts):
+    """Convert ISO timestamp to dd/MM/YYYY HH:MM:SS (fallback to input)."""
+    if not ts:
+        return ""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M:%S")
+    except Exception:
+        return ts
+
 def hr(char="-", width=60):
     print(char * width)
 
@@ -108,7 +128,7 @@ def cmd_today():
 
     print()
     hr()
-    print(f"  Today's Usage  ({today})")
+    print(f"  Today's Usage  ({fmt_date(today)})")
     hr()
 
     if not rows:
@@ -223,8 +243,8 @@ def cmd_stats():
     print("  Claude Code Usage - All-Time Statistics")
     hr("=")
 
-    first_date = (session_info["first"] or "")[:10]
-    last_date = (session_info["last"] or "")[:10]
+    first_date = fmt_date((session_info["first"] or "")[:10])
+    last_date = fmt_date((session_info["last"] or "")[:10])
     print(f"  Period:           {first_date} to {last_date}")
     print(f"  Total sessions:   {session_info['sessions'] or 0:,}")
     print(f"  Total turns:      {fmt(totals['turns'] or 0)}")

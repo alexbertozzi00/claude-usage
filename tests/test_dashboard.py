@@ -95,6 +95,12 @@ class TestGetDashboardData(unittest.TestCase):
         # 1 hour = 60 minutes
         self.assertEqual(session["duration_min"], 60.0)
 
+    def test_dates_are_formatted_ddmmyyyy(self):
+        data = get_dashboard_data(db_path=self.db_path)
+        session = data["sessions_all"][0]
+        self.assertEqual(session["last"], "08/04/2026 10:00:00")
+        self.assertRegex(data["generated_at"], r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}")
+
 class TestSessionHistory(unittest.TestCase):
     def setUp(self):
         self.session_id = "sess-history-123"
@@ -154,6 +160,7 @@ class TestSessionHistory(unittest.TestCase):
         self.assertEqual(data["session_id"], self.session_id)
         self.assertEqual(len(data["entries"]), 2)
         self.assertEqual(data["entries"][0]["role"], "user")
+        self.assertEqual(data["entries"][0]["timestamp"], "08/04/2026 09:00:00")
         self.assertIn("Resposta final", data["entries"][1]["text"])
 
     def test_get_session_history_missing_session(self):
