@@ -824,6 +824,47 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   th { text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
   th.sortable { cursor: pointer; user-select: none; }
   th.sortable:hover { color: var(--text); }
+  .th-with-tooltip { display: inline-flex; align-items: center; gap: 6px; }
+  .tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 10px;
+    cursor: help;
+    line-height: 1;
+  }
+  .tooltip-text {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(320px, 70vw);
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity .18s ease, transform .18s ease;
+    z-index: 20;
+  }
+  .tooltip:hover .tooltip-text, .tooltip:focus-within .tooltip-text {
+    opacity: 1;
+    transform: translateY(0);
+  }
   .sort-icon { font-size: 9px; opacity: 0.8; }
   td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
   tr:last-child td { border-bottom: none; }
@@ -932,7 +973,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <th class="sortable" onclick="setModelSort('output')">Saída <span class="sort-icon" id="msort-output"></span></th>
         <th class="sortable" onclick="setModelSort('cache_read')">Leitura de Cache <span class="sort-icon" id="msort-cache_read"></span></th>
         <th class="sortable" onclick="setModelSort('cache_creation')">Criação de Cache <span class="sort-icon" id="msort-cache_creation"></span></th>
-        <th class="sortable" onclick="setModelSort('cost')">Custo Estimado <span class="sort-icon" id="msort-cost"></span></th>
+        <th class="sortable" onclick="setModelSort('cost')"><span class="th-with-tooltip">Custo Estimado <span class="tooltip" tabindex="0" aria-label="Ajuda sobre custo estimado">?<span class="tooltip-text">Custo estimado considerando o preço em tokens de API. Não se aplica aos planos Max/Pro, pois esses planos funcionam por assinatura.</span></span></span> <span class="sort-icon" id="msort-cost"></span></th>
       </tr></thead>
       <tbody id="model-cost-body"></tbody>
     </table>
@@ -949,8 +990,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <th class="sortable" onclick="setSessionSort('turns')">Interações <span class="sort-icon" id="sort-icon-turns"></span></th>
         <th class="sortable" onclick="setSessionSort('input')">Entrada <span class="sort-icon" id="sort-icon-input"></span></th>
         <th class="sortable" onclick="setSessionSort('output')">Saída <span class="sort-icon" id="sort-icon-output"></span></th>
-        <th class="sortable" onclick="setSessionSort('cost')">Custo Estimado <span class="sort-icon" id="sort-icon-cost"></span></th>
-        <th>Ações</th>
+        <th class="sortable" onclick="setSessionSort('cost')"><span class="th-with-tooltip">Custo Estimado <span class="tooltip" tabindex="0" aria-label="Ajuda sobre custo estimado">?<span class="tooltip-text">Custo estimado considerando o preço em tokens de API. Não se aplica aos planos Max/Pro, pois esses planos funcionam por assinatura.</span></span></span> <span class="sort-icon" id="sort-icon-cost"></span></th>
       </tr></thead>
       <tbody id="sessions-body"></tbody>
     </table>
@@ -964,7 +1004,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <th class="sortable" onclick="setProjectSort('turns')">Interações <span class="sort-icon" id="psort-turns"></span></th>
         <th class="sortable" onclick="setProjectSort('input')">Entrada <span class="sort-icon" id="psort-input"></span></th>
         <th class="sortable" onclick="setProjectSort('output')">Saída <span class="sort-icon" id="psort-output"></span></th>
-        <th class="sortable" onclick="setProjectSort('cost')">Custo Estimado <span class="sort-icon" id="psort-cost"></span></th>
+        <th class="sortable" onclick="setProjectSort('cost')"><span class="th-with-tooltip">Custo Estimado <span class="tooltip" tabindex="0" aria-label="Ajuda sobre custo estimado">?<span class="tooltip-text">Custo estimado considerando o preço em tokens de API. Não se aplica aos planos Max/Pro, pois esses planos funcionam por assinatura.</span></span></span> <span class="sort-icon" id="psort-cost"></span></th>
       </tr></thead>
       <tbody id="project-cost-body"></tbody>
     </table>
