@@ -242,6 +242,11 @@ class TestDashboardHTTP(unittest.TestCase):
         self.assertIn("Atualização automática: pausada", HTML_TEMPLATE)
         self.assertIn("Atualização automática: ativa", HTML_TEMPLATE)
 
+    def test_template_mentions_hourly_activity_explanation(self):
+        self.assertIn("Atividade por Hora", HTML_TEMPLATE)
+        self.assertIn("média de tokens", HTML_TEMPLATE)
+        self.assertIn("Ajuda sobre atividade por hora", HTML_TEMPLATE)
+
     def test_404_for_unknown_path(self):
         url = f"http://127.0.0.1:{self.port}/nonexistent"
         try:

@@ -1010,7 +1010,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .pager-label { min-width: 100px; text-align: center; }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
   .hourly-list { max-height: 320px; overflow-y: auto; padding-right: 4px; }
-  .hourly-row { display: grid; grid-template-columns: 70px 1fr 90px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 13px; }
+  .hourly-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; line-height: 1.45; }
+  .hourly-row { display: grid; grid-template-columns: 70px 1fr 180px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 13px; }
   .hourly-row:last-child { border-bottom: none; }
   .hourly-track { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
   .hourly-fill { height: 100%; background: linear-gradient(90deg, #4f8ef7, #4ade80); }
@@ -1124,7 +1125,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap"><canvas id="chart-project"></canvas></div>
     </div>
     <div class="chart-card wide">
-      <h2>Atividade por Hora</h2>
+      <h2><span class="th-with-tooltip">Atividade por Hora <span class="tooltip" tabindex="0" aria-label="Ajuda sobre atividade por hora">?<span class="tooltip-text">Cada linha representa um horário (00:00–23:00) dentro do período filtrado. A barra indica a média de tokens (entrada + saída) por dia naquele horário, e o valor à direita mostra interações totais e média diária.</span></span></span></h2>
+      <div id="hourly-activity-meta" class="hourly-meta"></div>
       <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
   </div>
@@ -1398,6 +1400,26 @@ function getLatestDataDay() {
   const allDays = fromSessions.concat(fromDaily);
   if (!allDays.length) return null;
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
+}
+
+function getRangeDayCount(cutoff) {
+  const latestDataDay = getLatestDataDay();
+  if (!latestDataDay) return 1;
+  const end = new Date(latestDataDay + 'T00:00:00Z');
+
+  let start = null;
+  if (cutoff) {
+    start = new Date(cutoff + 'T00:00:00Z');
+  } else {
+    const fromSessions = (rawData?.sessions_all || []).map(s => s.last_date).filter(Boolean);
+    const fromDaily = (rawData?.daily_by_model || []).map(r => r.day).filter(Boolean);
+    const allDays = fromSessions.concat(fromDaily);
+    const earliest = allDays.length ? allDays.reduce((min, d) => (d < min ? d : min), allDays[0]) : latestDataDay;
+    start = new Date(earliest + 'T00:00:00Z');
+  }
+
+  const diff = Math.round((end - start) / 86400000) + 1;
+  return Math.max(1, diff);
 }
 
 function getRangeCutoff(range) {
@@ -1724,7 +1746,7 @@ function applyFilter() {
   renderTrendChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
-  renderHourlyActivity(filteredHourly);
+  renderHourlyActivity(filteredHourly, cutoff);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
@@ -1938,8 +1960,9 @@ function renderProjectChart(byProject) {
   });
 }
 
-function renderHourlyActivity(hourlyRows) {
+function renderHourlyActivity(hourlyRows, cutoff) {
   const container = document.getElementById('hourly-activity-list');
+  const meta = document.getElementById('hourly-activity-meta');
   if (!container) return;
 
   const base = Array.from({ length: 24 }, (_, hour) => ({
@@ -1955,14 +1978,24 @@ function renderHourlyActivity(hourlyRows) {
     base[idx].tokens += (row.input || 0) + (row.output || 0);
   }
 
-  const maxTokens = Math.max(1, ...base.map(r => r.tokens));
-  container.innerHTML = base.map(r => {
-    const widthPct = (r.tokens / maxTokens) * 100;
+  const dayCount = getRangeDayCount(cutoff);
+  const withAverages = base.map(r => ({
+    ...r,
+    avgTurns: r.turns / dayCount,
+    avgTokens: r.tokens / dayCount,
+  }));
+  const maxTokens = Math.max(1, ...withAverages.map(r => r.avgTokens));
+
+  if (meta) {
+    meta.textContent = `Período analisado: ${dayCount} dia(s). Barra = média de tokens (entrada + saída) por dia em cada horário.`;
+  }
+  container.innerHTML = withAverages.map(r => {
+    const widthPct = (r.avgTokens / maxTokens) * 100;
     return `
       <div class="hourly-row">
         <div>${r.hour}:00</div>
         <div class="hourly-track"><div class="hourly-fill" style="width:${widthPct}%"></div></div>
-        <div style="text-align:right">${r.turns.toLocaleString()}</div>
+        <div style="text-align:right">${r.turns.toLocaleString()} (${r.avgTurns.toFixed(1)}/dia)</div>
       </div>
     `;
   }).join('');
