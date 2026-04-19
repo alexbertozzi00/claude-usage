@@ -10,7 +10,13 @@ import urllib.request
 from pathlib import Path
 
 from scanner import get_db, init_db, upsert_sessions, insert_turns
-from dashboard import get_dashboard_data, get_session_history, DashboardHandler, HTML_TEMPLATE
+from dashboard import (
+    get_dashboard_data,
+    get_session_history,
+    rename_session,
+    DashboardHandler,
+    HTML_TEMPLATE,
+)
 
 try:
     from http.server import HTTPServer
@@ -67,6 +73,7 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertEqual(session["project"], "user/myproject")
         self.assertEqual(session["model"], "claude-sonnet-4-6")
         self.assertEqual(session["input"], 5000)
+        self.assertEqual(session["custom_name"], "")
 
     def test_daily_by_model_populated(self):
         data = get_dashboard_data(db_path=self.db_path)
@@ -162,6 +169,7 @@ class TestSessionHistory(unittest.TestCase):
         self.assertEqual(data["entries"][0]["role"], "user")
         self.assertEqual(data["entries"][0]["timestamp"], "08/04/2026 09:00:00")
         self.assertIn("Resposta final", data["entries"][1]["text"])
+        self.assertEqual(data["custom_name"], "")
 
     def test_get_session_history_missing_session(self):
         data = get_session_history("sess-unknown", db_path=self.db_path)
@@ -209,6 +217,9 @@ class TestDashboardHTTP(unittest.TestCase):
             self.assertIn("updated", data)
             self.assertIn("skipped", data)
 
+    def test_template_mentions_rename_api(self):
+        self.assertIn("/api/session/rename", HTML_TEMPLATE)
+
     def test_404_for_unknown_path(self):
         url = f"http://127.0.0.1:{self.port}/nonexistent"
         try:
@@ -217,6 +228,54 @@ class TestDashboardHTTP(unittest.TestCase):
         except urllib.error.HTTPError as e:
             self.assertEqual(e.code, 404)
 
+
+class TestRenameSession(unittest.TestCase):
+    def setUp(self):
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpfile.close()
+        self.db_path = Path(self.tmpfile.name)
+        conn = get_db(self.db_path)
+        init_db(conn)
+        upsert_sessions(conn, [{
+            "session_id": "sess-rename-123",
+            "project_name": "user/myproject",
+            "first_timestamp": "2026-04-08T09:00:00Z",
+            "last_timestamp": "2026-04-08T10:00:00Z",
+            "git_branch": "main",
+            "model": "claude-sonnet-4-6",
+            "total_input_tokens": 1,
+            "total_output_tokens": 1,
+            "total_cache_read": 0,
+            "total_cache_creation": 0,
+            "turn_count": 1,
+        }])
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def test_rename_success(self):
+        result, code = rename_session("sess-rename-123", "Nova sessão", db_path=self.db_path)
+        self.assertEqual(code, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["custom_name"], "Nova sessão")
+
+    def test_rename_clear_name(self):
+        rename_session("sess-rename-123", "Nome temporário", db_path=self.db_path)
+        result, code = rename_session("sess-rename-123", "", db_path=self.db_path)
+        self.assertEqual(code, 200)
+        self.assertIsNone(result["custom_name"])
+
+    def test_rename_nonexistent_session(self):
+        result, code = rename_session("sess-inexistente", "Nome", db_path=self.db_path)
+        self.assertEqual(code, 404)
+        self.assertFalse(result["ok"])
+
+    def test_rename_too_long(self):
+        result, code = rename_session("sess-rename-123", "a" * 81, db_path=self.db_path)
+        self.assertEqual(code, 400)
+        self.assertFalse(result["ok"])
 
 class TestHTMLTemplate(unittest.TestCase):
     def test_template_is_valid_html(self):
