@@ -3,15 +3,19 @@
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 import threading
 import unittest
 import urllib.request
+from unittest.mock import patch
 from pathlib import Path
 
 from scanner import get_db, init_db, upsert_sessions, insert_turns
 from dashboard import (
     get_dashboard_data,
+    get_sessions_for_hour,
+    get_usage_snapshot,
     get_session_history,
     rename_session,
     DashboardHandler,
@@ -59,6 +63,7 @@ class TestGetDashboardData(unittest.TestCase):
         data = get_dashboard_data(db_path=self.db_path)
         self.assertIn("all_models", data)
         self.assertIn("daily_by_model", data)
+        self.assertIn("hourly_by_model", data)
         self.assertIn("sessions_all", data)
         self.assertIn("generated_at", data)
 
@@ -82,6 +87,21 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("day", day)
         self.assertIn("model", day)
         self.assertIn("input", day)
+
+    def test_hourly_by_model_populated(self):
+        data = get_dashboard_data(db_path=self.db_path)
+        self.assertGreater(len(data["hourly_by_model"]), 0)
+        hour = data["hourly_by_model"][0]
+        self.assertIn("day", hour)
+        self.assertIn("hour", hour)
+        self.assertIn("turns", hour)
+
+    def test_get_sessions_for_hour(self):
+        data = get_sessions_for_hour("09", cutoff="2026-04-01", models=["claude-sonnet-4-6"], db_path=self.db_path)
+        self.assertNotIn("error", data)
+        self.assertEqual(data["hour"], "09")
+        self.assertEqual(len(data["sessions"]), 1)
+        self.assertEqual(data["sessions"][0]["session_id_full"], "sess-abc123")
 
     def test_missing_db_returns_error(self):
         data = get_dashboard_data(db_path=Path("/nonexistent/path/usage.db"))
@@ -206,6 +226,24 @@ class TestDashboardHTTP(unittest.TestCase):
             # Should have expected keys (or error if no DB)
             self.assertTrue("all_models" in data or "error" in data)
 
+    def test_api_usage_returns_json(self):
+        url = f"http://127.0.0.1:{self.port}/api/usage"
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("application/json", resp.headers["Content-Type"])
+            data = json.loads(resp.read())
+            self.assertIn("ok", data)
+            self.assertIn("current_session", data)
+
+    def test_hour_page_returns_html(self):
+        url = f"http://127.0.0.1:{self.port}/hour/09"
+        try:
+            with urllib.request.urlopen(url) as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertIn("text/html", resp.headers["Content-Type"])
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 404)
+
     def test_api_rescan_returns_json(self):
         url = f"http://127.0.0.1:{self.port}/api/rescan"
         req = urllib.request.Request(url, method="POST")
@@ -232,6 +270,13 @@ class TestDashboardHTTP(unittest.TestCase):
     def test_template_mentions_auto_refresh_paused_status(self):
         self.assertIn("Atualização automática: pausada", HTML_TEMPLATE)
         self.assertIn("Atualização automática: ativa", HTML_TEMPLATE)
+
+    def test_template_mentions_hourly_activity_explanation(self):
+        self.assertIn("Atividade por Hora", HTML_TEMPLATE)
+        self.assertIn("média de tokens", HTML_TEMPLATE)
+        self.assertIn("Ajuda sobre atividade por hora", HTML_TEMPLATE)
+        self.assertIn("chart-title-row", HTML_TEMPLATE)
+        self.assertIn("/hour/", HTML_TEMPLATE)
 
     def test_404_for_unknown_path(self):
         url = f"http://127.0.0.1:{self.port}/nonexistent"
@@ -289,6 +334,32 @@ class TestRenameSession(unittest.TestCase):
         result, code = rename_session("sess-rename-123", "a" * 81, db_path=self.db_path)
         self.assertEqual(code, 400)
         self.assertFalse(result["ok"])
+
+
+class TestUsageSnapshot(unittest.TestCase):
+    @patch("dashboard.subprocess.run")
+    def test_usage_snapshot_retries_after_timeout(self, mock_run):
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["claude", "/usage", "--json"], timeout=8),
+            subprocess.CompletedProcess(
+                args=["claude", "/usage"],
+                returncode=0,
+                stdout="Current session used 10% available 90% resets at tomorrow\nCurrent week used 20% available 80% resets at next monday",
+                stderr="",
+            ),
+        ]
+
+        data = get_usage_snapshot(timeout_seconds=8)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["current_session"]["used_percent"], 10.0)
+        self.assertEqual(data["current_week"]["available_percent"], 80.0)
+
+    @patch("dashboard.subprocess.run")
+    def test_usage_snapshot_returns_error_after_all_failures(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["claude", "/usage"], timeout=8)
+        data = get_usage_snapshot(timeout_seconds=8)
+        self.assertFalse(data["ok"])
+        self.assertIn("Falha ao capturar saída", data["error"])
 
 class TestHTMLTemplate(unittest.TestCase):
     def test_template_is_valid_html(self):
