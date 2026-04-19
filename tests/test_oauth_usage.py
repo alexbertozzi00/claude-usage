@@ -54,9 +54,13 @@ class TestOAuthUsageFetch(unittest.TestCase):
         oauth_usage._USAGE_CACHE["expires_at"] = 0
         oauth_usage._USAGE_CACHE["last_snapshot"] = None
         os.environ.pop("CLAUDE_OAUTH_ACCESS_TOKEN", None)
+        os.environ.pop("CLAUDE_AI_OAUTH_ACCESS_TOKEN", None)
+        os.environ.pop("claudeAiOauth.accessToken", None)
 
     def tearDown(self):
         os.environ.pop("CLAUDE_OAUTH_ACCESS_TOKEN", None)
+        os.environ.pop("CLAUDE_AI_OAUTH_ACCESS_TOKEN", None)
+        os.environ.pop("claudeAiOauth.accessToken", None)
         os.environ.pop("CLAUDE_OAUTH_DOTENV_PATH", None)
 
     def test_returns_consistent_structure_when_token_missing(self):
@@ -185,10 +189,41 @@ class TestOAuthUsageFetch(unittest.TestCase):
             first = oauth_usage.get_oauth_usage_snapshot(access_token="token", cache_ttl_seconds=60)
             second = oauth_usage.get_oauth_usage_snapshot(access_token="token", cache_ttl_seconds=60)
 
-        self.assertTrue(first.get("authUnsupported"))
         self.assertEqual(first["error"]["code"], 401)
         self.assertEqual(first.get("cache"), "miss")
         self.assertEqual(second.get("cache"), "hit")
+
+    def test_uses_required_headers_for_oauth_usage(self):
+        payload = {"five_hour": {"utilization": 12.0}, "seven_day": {"utilization": 30.0}}
+        captured = {}
+
+        def _fake_open(req, timeout=None):
+            captured["headers"] = dict(req.header_items())
+            return _FakeHTTPResponse(payload)
+
+        with patch("oauth_usage.request.urlopen", side_effect=_fake_open):
+            oauth_usage.get_oauth_usage_snapshot(access_token="sk-ant-oat-test-token", cache_ttl_seconds=1)
+
+        headers = {k.lower(): v for k, v in captured["headers"].items()}
+        self.assertIn("authorization", headers)
+        self.assertEqual(headers.get("anthropic-beta"), "oauth-2025-04-20")
+        self.assertEqual(headers.get("accept"), "application/json")
+        self.assertEqual(headers.get("content-type"), "application/json")
+
+    def test_prefers_claude_ai_oauth_access_token_env(self):
+        os.environ["claudeAiOauth.accessToken"] = "sk-ant-oat-from-env"
+        payload = {"five_hour": {"utilization": 19}, "seven_day": {"utilization": 29}}
+        captured = {}
+
+        def _fake_open(req, timeout=None):
+            captured["auth"] = req.headers.get("Authorization")
+            return _FakeHTTPResponse(payload)
+
+        with patch("oauth_usage.request.urlopen", side_effect=_fake_open):
+            oauth_usage.get_oauth_usage_snapshot(access_token=None, cache_ttl_seconds=1)
+
+        self.assertEqual(captured["auth"], "Bearer sk-ant-oat-from-env")
+
 
 if __name__ == "__main__":
     unittest.main()

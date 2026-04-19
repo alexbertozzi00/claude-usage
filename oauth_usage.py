@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -20,12 +21,31 @@ DOTENV_SEARCH_DEPTH = 5
 
 logger = logging.getLogger(__name__)
 
+_TOKEN_KEYS = (
+    "claudeAiOauth.accessToken",
+    "CLAUDE_OAUTH_ACCESS_TOKEN",
+    "CLAUDE_AI_OAUTH_ACCESS_TOKEN",
+)
 
 _USAGE_CACHE: dict[str, Any] = {
     "expires_at": 0.0,
     "last_success": None,
     "last_snapshot": None,
 }
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _base_snapshot(raw: Any = None) -> dict[str, Any]:
+    return {
+        "currentWindowPercentage": None,
+        "weeklyPercentage": None,
+        "source": "oauth_usage",
+        "fetchedAt": _iso_now(),
+        "raw": raw if raw is not None else {},
+    }
 
 
 def _iter_dotenv_candidates() -> list[Path]:
@@ -42,7 +62,6 @@ def _iter_dotenv_candidates() -> list[Path]:
 
     candidates.append(ENV_FILE_PATH)
 
-    # Keep insertion order while deduplicating.
     deduped: list[Path] = []
     seen: set[str] = set()
     for path in candidates:
@@ -63,7 +82,7 @@ def _read_token_from_env_file(path: Path | None = None) -> str:
 
             content = env_path.read_text(encoding="utf-8", errors="replace")
             for raw_line in content.splitlines():
-                line = raw_line.strip().lstrip("﻿")
+                line = raw_line.strip().lstrip("\ufeff")
                 if not line or line.startswith("#"):
                     continue
                 if line.startswith("export "):
@@ -71,7 +90,7 @@ def _read_token_from_env_file(path: Path | None = None) -> str:
                 if "=" not in line:
                     continue
                 key, value = line.split("=", 1)
-                if key.strip() != "CLAUDE_OAUTH_ACCESS_TOKEN":
+                if key.strip() not in _TOKEN_KEYS:
                     continue
                 normalized = value.strip().strip('"').strip("'")
                 if normalized:
@@ -82,11 +101,36 @@ def _read_token_from_env_file(path: Path | None = None) -> str:
 
 
 def _resolve_access_token(access_token: str | None) -> str:
-    return (
-        (access_token or "").strip()
-        or (os.environ.get("CLAUDE_OAUTH_ACCESS_TOKEN") or "").strip()
-        or _read_token_from_env_file()
-    )
+    if access_token and access_token.strip():
+        return access_token.strip()
+
+    for key in _TOKEN_KEYS:
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+
+    return _read_token_from_env_file()
+
+
+def _is_likely_oauth_access_token(token: str) -> bool:
+    if not token:
+        return False
+    normalized = token.strip()
+    return normalized.startswith("sk-ant-oat") or normalized.startswith("oauth_")
+
+
+def _token_debug_metadata(token: str) -> dict[str, Any]:
+    if not token:
+        return {"present": False}
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+    return {
+        "present": True,
+        "length": len(token),
+        "prefix": token[:10],
+        "suffix": token[-6:] if len(token) >= 6 else token,
+        "sha256_12": digest,
+        "looks_oauth": _is_likely_oauth_access_token(token),
+    }
 
 
 def _get_cached_snapshot(now: float) -> dict[str, Any] | None:
@@ -94,10 +138,7 @@ def _get_cached_snapshot(now: float) -> dict[str, Any] | None:
     expires_at = float(_USAGE_CACHE.get("expires_at") or 0)
     if snapshot and expires_at > now:
         cached = deepcopy(snapshot)
-        if cached.get("cache") == "miss":
-            cached["cache"] = "hit"
-        elif not cached.get("cache"):
-            cached["cache"] = "hit"
+        cached["cache"] = "hit"
         return cached
     return None
 
@@ -107,21 +148,6 @@ def _store_snapshot(snapshot: dict[str, Any], *, ttl_seconds: int, mark_success:
     _USAGE_CACHE["expires_at"] = time.time() + max(1, int(ttl_seconds))
     if mark_success:
         _USAGE_CACHE["last_success"] = deepcopy(snapshot)
-
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _base_snapshot(raw: Any = None) -> dict[str, Any]:
-    return {
-        "currentWindowPercentage": None,
-        "weeklyPercentage": None,
-        "source": "oauth_usage",
-        "fetchedAt": _iso_now(),
-        "raw": raw if raw is not None else {},
-    }
 
 
 def _to_float_percent(value: Any) -> float | None:
@@ -154,28 +180,13 @@ def _extract_percentage_from_node(node: Any) -> float | None:
     if not isinstance(node, dict):
         return None
 
-    direct_keys = (
-        "percent",
-        "percentage",
-        "utilization",
-        "utilisation",
-        "usage_percent",
-        "used_percent",
-        "percent_used",
-        "usagePercentage",
-    )
-    for key in direct_keys:
+    # Explicitly keep utilization first as requested.
+    for key in ("utilization", "utilisation", "percent", "percentage", "usagePercentage", "usage_percent"):
         pct = _to_float_percent(node.get(key))
         if pct is not None:
             return pct
 
-    for used_key, limit_key in (
-        ("used", "limit"),
-        ("usage", "limit"),
-        ("consumed", "limit"),
-        ("current", "max"),
-        ("value", "max"),
-    ):
+    for used_key, limit_key in (("used", "limit"), ("usage", "limit"), ("current", "max"), ("value", "max")):
         pct = _ratio_to_percent(node.get(used_key), node.get(limit_key))
         if pct is not None:
             return pct
@@ -183,13 +194,6 @@ def _extract_percentage_from_node(node: Any) -> float | None:
     remaining_pct = _to_float_percent(node.get("remaining_percent"))
     if remaining_pct is not None:
         return max(0.0, min(100.0, 100.0 - remaining_pct))
-
-    remaining = node.get("remaining")
-    limit = node.get("limit")
-    if remaining is not None and limit is not None:
-        pct = _ratio_to_percent(remaining, limit)
-        if pct is not None:
-            return max(0.0, min(100.0, 100.0 - pct))
 
     return None
 
@@ -199,10 +203,10 @@ def _collect_named_nodes(payload: Any, name: str) -> list[Any]:
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
-            for k, v in node.items():
-                if str(k).lower() == name.lower():
-                    matches.append(v)
-                walk(v)
+            for key, value in node.items():
+                if str(key).lower() == name.lower():
+                    matches.append(value)
+                walk(value)
         elif isinstance(node, list):
             for item in node:
                 walk(item)
@@ -218,7 +222,6 @@ def _extract_window_percentage(payload: Any, window_name: str) -> float | None:
         if pct is not None:
             return pct
 
-    # Fallback: sometimes the node may carry window metadata under another key.
     for node in candidates:
         if isinstance(node, dict):
             for value in node.values():
@@ -269,19 +272,30 @@ def get_oauth_usage_snapshot(
     if cached_snapshot:
         return cached_snapshot
 
+    token_meta = _token_debug_metadata(token)
+    logger.info("OAuth usage token metadata", extra={"event": "oauth_usage_token_metadata", **token_meta})
+
     if not token:
         snapshot = _build_error_snapshot(
-            "OAuth access token ausente. Defina CLAUDE_OAUTH_ACCESS_TOKEN no ambiente ou no arquivo .env."
+            "OAuth access token ausente. Defina claudeAiOauth.accessToken ou CLAUDE_OAUTH_ACCESS_TOKEN."
         )
         snapshot["cache"] = "miss"
         _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
         return snapshot
 
+    if not _is_likely_oauth_access_token(token):
+        logger.warning(
+            "OAuth usage token does not look like an OAuth access token",
+            extra={"event": "oauth_usage_token_format_warning", **token_meta},
+        )
+
     req = request.Request(
         OAUTH_USAGE_URL,
         headers={
             "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
             "Accept": "application/json",
+            "Content-Type": "application/json",
         },
         method="GET",
     )
@@ -295,7 +309,6 @@ def get_oauth_usage_snapshot(
         snapshot = _parse_usage_payload(payload)
         snapshot["httpStatus"] = status
         snapshot["cache"] = "miss"
-
         _store_snapshot(snapshot, ttl_seconds=cache_ttl_seconds, mark_success=True)
         return snapshot
 
@@ -308,33 +321,19 @@ def get_oauth_usage_snapshot(
             except json.JSONDecodeError:
                 body = {"rawText": body_text}
 
-        if http_err.code == 401 and isinstance(body, dict):
-            err_obj = body.get("error") if isinstance(body.get("error"), dict) else {}
-            err_type = str(err_obj.get("type") or "")
-            err_msg = str(err_obj.get("message") or "")
-            if err_type == "authentication_error" and "not supported" in err_msg.lower():
-                snapshot = _build_error_snapshot(
-                    "OAuth authentication não suportada pelo endpoint /api/oauth/usage para este token.",
-                    raw=body,
-                    error_code=401,
-                )
-                snapshot["authUnsupported"] = True
-                snapshot["cache"] = "miss"
-                _store_snapshot(snapshot, ttl_seconds=min(300, max(30, int(cache_ttl_seconds))))
-                logger.warning("OAuth usage endpoint returned unsupported OAuth authentication (401)")
-                return snapshot
+        if http_err.code == 401:
+            logger.warning(
+                "OAuth usage returned 401: possible incorrect token, insufficient scope, or missing anthropic-beta header",
+                extra={"event": "oauth_usage_401", "status": 401, **token_meta},
+            )
 
         if http_err.code == 429 and _USAGE_CACHE["last_success"]:
             cached = deepcopy(_USAGE_CACHE["last_success"])
-            cached["fallback"] = {
-                "reason": "rate_limited",
-                "httpStatus": 429,
-            }
+            cached["fallback"] = {"reason": "rate_limited", "httpStatus": 429}
             cached["cache"] = "stale"
             logger.warning("OAuth usage rate-limited (429); serving cached snapshot")
             return cached
 
-        logger.warning("OAuth usage request failed", extra={"event": "oauth_usage_http_error", "status": http_err.code})
         snapshot = _build_error_snapshot(
             f"Falha ao consultar oauth usage (HTTP {http_err.code}).",
             raw=body or {},
@@ -343,6 +342,7 @@ def get_oauth_usage_snapshot(
         snapshot["cache"] = "miss"
         _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
         return snapshot
+
     except error.URLError as url_err:
         logger.warning("OAuth usage request failed due to network error: %s", url_err)
         if _USAGE_CACHE["last_success"]:
@@ -350,16 +350,19 @@ def get_oauth_usage_snapshot(
             cached["fallback"] = {"reason": "network_error"}
             cached["cache"] = "stale"
             return cached
+
         snapshot = _build_error_snapshot(f"Erro de rede ao consultar oauth usage: {url_err}")
         snapshot["cache"] = "miss"
         _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
         return snapshot
+
     except json.JSONDecodeError as decode_err:
         logger.warning("OAuth usage response is not valid JSON: %s", decode_err)
         snapshot = _build_error_snapshot("Resposta do oauth usage não é JSON válido.")
         snapshot["cache"] = "miss"
         _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
         return snapshot
+
     except Exception as exc:
         logger.exception("Unexpected error while fetching oauth usage")
         if _USAGE_CACHE["last_success"]:
@@ -367,6 +370,7 @@ def get_oauth_usage_snapshot(
             cached["fallback"] = {"reason": "unexpected_error"}
             cached["cache"] = "stale"
             return cached
+
         snapshot = _build_error_snapshot(f"Erro inesperado ao consultar oauth usage: {exc}")
         snapshot["cache"] = "miss"
         _store_snapshot(snapshot, ttl_seconds=min(120, max(15, int(cache_ttl_seconds))))
