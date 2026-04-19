@@ -303,6 +303,9 @@ class TestHTMLTemplate(unittest.TestCase):
         self.assertIn("session-link", HTML_TEMPLATE)
         self.assertIn("encodeURIComponent(s.session_id_full)", HTML_TEMPLATE)
 
+    def test_template_declares_renaming_session_state(self):
+        self.assertIn("const renamingSessions = new Set();", HTML_TEMPLATE)
+
     def test_template_has_insights_section(self):
         self.assertIn("Insights Acionáveis", HTML_TEMPLATE)
         self.assertIn("id=\"insights-list\"", HTML_TEMPLATE)
