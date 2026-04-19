@@ -44,7 +44,7 @@ def _format_timestamp(timestamp_str):
 
 def get_dashboard_data(db_path=DB_PATH):
     if not db_path.exists():
-        return {"error": "Database not found. Run: python cli.py scan"}
+        return {"error": "Banco de dados não encontrado. Execute: python cli.py scan"}
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -210,11 +210,11 @@ def find_transcript_path_for_session(session_id, db_path=DB_PATH):
 
 def get_session_history(session_id, db_path=DB_PATH):
     if not session_id:
-        return {"error": "Session ID is required."}
+        return {"error": "É necessário informar um ID de sessão."}
 
     transcript_path = find_transcript_path_for_session(session_id, db_path=db_path)
     if not transcript_path:
-        return {"error": "Session transcript not found."}
+        return {"error": "Transcrição da sessão não encontrada."}
 
     entries = []
     message_index = {}
@@ -238,7 +238,7 @@ def get_session_history(session_id, db_path=DB_PATH):
                     continue
 
                 timestamp = _format_timestamp(record.get("timestamp") or "")
-                text = _extract_message_text(record) or "(no text content)"
+                text = _extract_message_text(record) or "(sem conteúdo de texto)"
                 message = record.get("message", {})
                 message_id = message.get("id") if isinstance(message, dict) else None
                 entry = {
@@ -256,10 +256,10 @@ def get_session_history(session_id, db_path=DB_PATH):
                 else:
                     entries.append(entry)
     except OSError as e:
-        return {"error": f"Could not read session transcript: {e}"}
+        return {"error": f"Não foi possível ler a transcrição da sessão: {e}"}
 
     if not entries:
-        return {"error": "No conversation entries found for this session."}
+        return {"error": "Nenhuma mensagem foi encontrada para esta sessão."}
 
     return {
         "session_id": session_id,
@@ -272,11 +272,11 @@ def render_session_history_html(session_data):
     if "error" in session_data:
         err = escape(session_data["error"])
         return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Session History</title>
+<title>Histórico da Sessão</title>
 <style>
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
@@ -388,9 +388,9 @@ def render_session_history_html(session_data):
       </svg>
     </label>
   </div>
-  <h1>Session History</h1>
+  <h1>Histórico da Sessão</h1>
   <p>{err}</p>
-  <p><a href="/">← Back to dashboard</a></p>
+  <p><a href="/">← Voltar ao painel</a></p>
 </div>
 <script>
   const THEME_STORAGE_KEY = 'claude_usage_theme';
@@ -416,7 +416,7 @@ def render_session_history_html(session_data):
     rows = []
     for entry in session_data["entries"]:
         role = escape(entry["role"])
-        role_label = "User" if role == "user" else "Assistant"
+        role_label = "Usuário" if role == "user" else "Assistente"
         timestamp = escape(entry["timestamp"] or "-")
         text = escape(entry["text"])
         row_html = f"""<article class="entry {role}">
@@ -432,11 +432,11 @@ def render_session_history_html(session_data):
     source = escape(session_data["transcript_path"])
     content = "\n".join(rows)
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Session {sid}</title>
+<title>Sessão {sid}</title>
 <style>
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
@@ -514,7 +514,7 @@ def render_session_history_html(session_data):
 <body>
 <div class="wrap">
   <div class="topbar">
-    <a class="back" href="/">← Back to dashboard</a>
+    <a class="back" href="/">← Voltar ao painel</a>
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -527,8 +527,8 @@ def render_session_history_html(session_data):
       </svg>
     </label>
   </div>
-  <h1>Session {sid}</h1>
-  <div class="meta">Source: {source}</div>
+  <h1>Sessão {sid}</h1>
+  <div class="meta">Origem: {source}</div>
   {content}
 </div>
 <script>
@@ -554,11 +554,11 @@ def render_session_history_html(session_data):
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Claude Code Usage Dashboard</title>
+<title>Painel de Uso do Claude Code</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root, [data-theme="dark"] {
@@ -703,8 +703,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>Claude Code Usage Dashboard</h1>
-  <div class="meta" id="meta">Loading...</div>
+  <h1>Painel de Uso do Claude Code</h1>
+  <div class="meta" id="meta">Carregando...</div>
   <div class="header-controls">
     <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
@@ -718,90 +718,89 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         </g>
       </svg>
     </label>
-    <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
-    </div>
+    <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos.">&#x21bb; Reescanear</button>
   </div>
 </header>
 
 <div id="filter-bar">
-  <div class="filter-label">Models</div>
+  <div class="filter-label">Modelos</div>
   <div id="model-checkboxes"></div>
-  <button class="filter-btn" onclick="selectAllModels()">All</button>
-  <button class="filter-btn" onclick="clearAllModels()">None</button>
+  <button class="filter-btn" onclick="selectAllModels()">Todos</button>
+  <button class="filter-btn" onclick="clearAllModels()">Nenhum</button>
   <div class="filter-sep"></div>
-  <div class="filter-label">Range</div>
+  <div class="filter-label">Período</div>
   <div class="range-group">
     <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
-    <button class="range-btn" data-range="all" onclick="setRange('all')">All</button>
+    <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
 </div>
 
 <div class="container">
   <div class="stats-row" id="stats-row"></div>
   <div class="insights-card">
-    <div class="section-title">Actionable Insights</div>
+    <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
   </div>
   <div class="charts-grid">
     <div class="chart-card wide">
-      <h2 id="daily-chart-title">Daily Token Usage</h2>
+      <h2 id="daily-chart-title">Uso Diário de Tokens</h2>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="chart-card">
-      <h2>By Model</h2>
+      <h2>Por Modelo</h2>
       <div class="chart-wrap"><canvas id="chart-model"></canvas></div>
     </div>
     <div class="chart-card">
-      <h2>Top Projects by Tokens</h2>
+      <h2>Top Projetos por Tokens</h2>
       <div class="chart-wrap"><canvas id="chart-project"></canvas></div>
     </div>
   </div>
   <div class="table-card">
-    <div class="section-title">Cost by Model</div>
+    <div class="section-title">Custo por Modelo</div>
     <table>
       <thead><tr>
-        <th>Model</th>
-        <th class="sortable" onclick="setModelSort('turns')">Turns <span class="sort-icon" id="msort-turns"></span></th>
-        <th class="sortable" onclick="setModelSort('input')">Input <span class="sort-icon" id="msort-input"></span></th>
-        <th class="sortable" onclick="setModelSort('output')">Output <span class="sort-icon" id="msort-output"></span></th>
-        <th class="sortable" onclick="setModelSort('cache_read')">Cache Read <span class="sort-icon" id="msort-cache_read"></span></th>
-        <th class="sortable" onclick="setModelSort('cache_creation')">Cache Creation <span class="sort-icon" id="msort-cache_creation"></span></th>
-        <th class="sortable" onclick="setModelSort('cost')">Est. Cost <span class="sort-icon" id="msort-cost"></span></th>
+        <th>Modelo</th>
+        <th class="sortable" onclick="setModelSort('turns')">Interações <span class="sort-icon" id="msort-turns"></span></th>
+        <th class="sortable" onclick="setModelSort('input')">Entrada <span class="sort-icon" id="msort-input"></span></th>
+        <th class="sortable" onclick="setModelSort('output')">Saída <span class="sort-icon" id="msort-output"></span></th>
+        <th class="sortable" onclick="setModelSort('cache_read')">Leitura de Cache <span class="sort-icon" id="msort-cache_read"></span></th>
+        <th class="sortable" onclick="setModelSort('cache_creation')">Criação de Cache <span class="sort-icon" id="msort-cache_creation"></span></th>
+        <th class="sortable" onclick="setModelSort('cost')">Custo Estimado <span class="sort-icon" id="msort-cost"></span></th>
       </tr></thead>
       <tbody id="model-cost-body"></tbody>
     </table>
   </div>
   <div class="table-card">
-    <div class="section-header"><div class="section-title">Recent Sessions</div><button class="export-btn" onclick="exportSessionsCSV()" title="Export all filtered sessions to CSV">&#x2913; CSV</button></div>
+    <div class="section-header"><div class="section-title">Sessões Recentes</div><button class="export-btn" onclick="exportSessionsCSV()" title="Exportar todas as sessões filtradas para CSV">&#x2913; CSV</button></div>
     <table>
       <thead><tr>
-        <th>Session</th>
-        <th>Project</th>
-        <th class="sortable" onclick="setSessionSort('last')">Last Active <span class="sort-icon" id="sort-icon-last"></span></th>
-        <th class="sortable" onclick="setSessionSort('duration_min')">Duration <span class="sort-icon" id="sort-icon-duration_min"></span></th>
-        <th>Model</th>
-        <th class="sortable" onclick="setSessionSort('turns')">Turns <span class="sort-icon" id="sort-icon-turns"></span></th>
-        <th class="sortable" onclick="setSessionSort('input')">Input <span class="sort-icon" id="sort-icon-input"></span></th>
-        <th class="sortable" onclick="setSessionSort('output')">Output <span class="sort-icon" id="sort-icon-output"></span></th>
-        <th class="sortable" onclick="setSessionSort('cost')">Est. Cost <span class="sort-icon" id="sort-icon-cost"></span></th>
+        <th>Sessão</th>
+        <th>Projeto</th>
+        <th class="sortable" onclick="setSessionSort('last')">Última Atividade <span class="sort-icon" id="sort-icon-last"></span></th>
+        <th class="sortable" onclick="setSessionSort('duration_min')">Duração <span class="sort-icon" id="sort-icon-duration_min"></span></th>
+        <th>Modelo</th>
+        <th class="sortable" onclick="setSessionSort('turns')">Interações <span class="sort-icon" id="sort-icon-turns"></span></th>
+        <th class="sortable" onclick="setSessionSort('input')">Entrada <span class="sort-icon" id="sort-icon-input"></span></th>
+        <th class="sortable" onclick="setSessionSort('output')">Saída <span class="sort-icon" id="sort-icon-output"></span></th>
+        <th class="sortable" onclick="setSessionSort('cost')">Custo Estimado <span class="sort-icon" id="sort-icon-cost"></span></th>
       </tr></thead>
       <tbody id="sessions-body"></tbody>
     </table>
   </div>
   <div class="table-card">
-    <div class="section-header"><div class="section-title">Cost by Project</div><button class="export-btn" onclick="exportProjectsCSV()" title="Export all projects to CSV">&#x2913; CSV</button></div>
+    <div class="section-header"><div class="section-title">Custo por Projeto</div><button class="export-btn" onclick="exportProjectsCSV()" title="Exportar todos os projetos para CSV">&#x2913; CSV</button></div>
     <table>
       <thead><tr>
-        <th>Project</th>
-        <th class="sortable" onclick="setProjectSort('sessions')">Sessions <span class="sort-icon" id="psort-sessions"></span></th>
-        <th class="sortable" onclick="setProjectSort('turns')">Turns <span class="sort-icon" id="psort-turns"></span></th>
-        <th class="sortable" onclick="setProjectSort('input')">Input <span class="sort-icon" id="psort-input"></span></th>
-        <th class="sortable" onclick="setProjectSort('output')">Output <span class="sort-icon" id="psort-output"></span></th>
-        <th class="sortable" onclick="setProjectSort('cost')">Est. Cost <span class="sort-icon" id="psort-cost"></span></th>
+        <th>Projeto</th>
+        <th class="sortable" onclick="setProjectSort('sessions')">Sessões <span class="sort-icon" id="psort-sessions"></span></th>
+        <th class="sortable" onclick="setProjectSort('turns')">Interações <span class="sort-icon" id="psort-turns"></span></th>
+        <th class="sortable" onclick="setProjectSort('input')">Entrada <span class="sort-icon" id="psort-input"></span></th>
+        <th class="sortable" onclick="setProjectSort('output')">Saída <span class="sort-icon" id="psort-output"></span></th>
+        <th class="sortable" onclick="setProjectSort('cost')">Custo Estimado <span class="sort-icon" id="psort-cost"></span></th>
       </tr></thead>
       <tbody id="project-cost-body"></tbody>
     </table>
@@ -810,13 +809,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <footer>
   <div class="footer-content">
-    <p>Cost estimates based on Anthropic API pricing (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) as of April 2026. Only models containing <em>opus</em>, <em>sonnet</em>, or <em>haiku</em> in the name are included in cost calculations. Actual costs for Max/Pro subscribers differ from API pricing.</p>
+    <p>Estimativas de custo baseadas nos preços da API da Anthropic (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) em abril de 2026. Apenas modelos contendo <em>opus</em>, <em>sonnet</em> ou <em>haiku</em> no nome são incluídos nos cálculos de custo. Custos reais para assinantes Max/Pro diferem do preço de API.</p>
     <p>
       GitHub: <a href="https://github.com/phuryn/claude-usage" target="_blank">https://github.com/phuryn/claude-usage</a>
       &nbsp;&middot;&nbsp;
-      Created by: <a href="https://www.productcompass.pm" target="_blank">The Product Compass Newsletter</a>
+      Criado por: <a href="https://www.productcompass.pm" target="_blank">The Product Compass Newsletter</a>
       &nbsp;&middot;&nbsp;
-      License: MIT
+      Licença: MIT
     </p>
   </div>
 </footer>
@@ -911,8 +910,8 @@ const TOKEN_COLORS = {
 const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6','#34d399','#60a5fa'];
 
 // ── Time range ─────────────────────────────────────────────────────────────
-const RANGE_LABELS = { '1d': 'Last 24 Hours', '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days', '180d': 'Last 6 Months', 'all': 'All Time' };
-const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 13, 'all': 12 };
+const RANGE_LABELS = { '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias', '90d': 'Últimos 90 dias', 'all': 'Período completo' };
+const RANGE_TICKS  = { '7d': 7, '30d': 15, '90d': 13, 'all': 12 };
 
 function getRangeCutoff(range) {
   if (range === 'all') return null;
@@ -1157,7 +1156,7 @@ function applyFilter() {
     : null;
 
   // Update daily chart title
-  document.getElementById('daily-chart-title').textContent = 'Daily Token Usage \u2014 ' + RANGE_LABELS[selectedRange];
+  document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + RANGE_LABELS[selectedRange];
 
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay);
@@ -1175,13 +1174,13 @@ function applyFilter() {
 function renderStats(t) {
   const rangeLabel = RANGE_LABELS[selectedRange].toLowerCase();
   const stats = [
-    { label: 'Sessions',       value: t.sessions.toLocaleString(), sub: rangeLabel },
-    { label: 'Turns',          value: fmt(t.turns),                sub: rangeLabel },
-    { label: 'Input Tokens',   value: fmt(t.input),                sub: rangeLabel },
-    { label: 'Output Tokens',  value: fmt(t.output),               sub: rangeLabel },
-    { label: 'Cache Read',     value: fmt(t.cache_read),           sub: 'from prompt cache' },
-    { label: 'Cache Creation', value: fmt(t.cache_creation),       sub: 'writes to prompt cache' },
-    { label: 'Est. Cost',      value: fmtCostBig(t.cost),          sub: 'API pricing, Apr 2026', color: cssVar('--green') },
+    { label: 'Sessões',       value: t.sessions.toLocaleString(), sub: rangeLabel },
+    { label: 'Interações',          value: fmt(t.turns),                sub: rangeLabel },
+    { label: 'Tokens de Entrada',   value: fmt(t.input),                sub: rangeLabel },
+    { label: 'Tokens de Saída',  value: fmt(t.output),               sub: rangeLabel },
+    { label: 'Leitura de Cache',     value: fmt(t.cache_read),           sub: 'do cache de prompt' },
+    { label: 'Criação de Cache', value: fmt(t.cache_creation),       sub: 'gravações no cache de prompt' },
+    { label: 'Custo Estimado',      value: fmtCostBig(t.cost),          sub: 'preço de API, abr/2026', color: cssVar('--green') },
   ];
   document.getElementById('stats-row').innerHTML = stats.map(s => `
     <div class="stat-card">
@@ -1197,7 +1196,7 @@ function renderInsights(totals, byModel, byProject, peakDay) {
   if (!container) return;
 
   if (!totals.turns) {
-    container.innerHTML = '<li>No data for the selected filters/range yet.</li>';
+    container.innerHTML = '<li>Ainda não há dados para os filtros/período selecionados.</li>';
     return;
   }
 
@@ -1209,28 +1208,28 @@ function renderInsights(totals, byModel, byProject, peakDay) {
   const insights = [];
   insights.push(
     cacheRatio < 0.15
-      ? `Low cache reuse (${(cacheRatio * 100).toFixed(1)}%): keep system prompts stable to improve cache hits.`
-      : `Good cache reuse (${(cacheRatio * 100).toFixed(1)}%): your workload is benefiting from prompt caching.`
+      ? `Baixo reaproveitamento de cache (${(cacheRatio * 100).toFixed(1)}%): mantenha prompts de sistema estáveis para aumentar acertos de cache.`
+      : `Bom reaproveitamento de cache (${(cacheRatio * 100).toFixed(1)}%): sua carga já está se beneficiando do cache de prompt.`
   );
 
   insights.push(
     outputRatio > 1.0
-      ? `High output/input ratio (${outputRatio.toFixed(2)}x): consider shorter default responses for routine tasks.`
-      : `Balanced output/input ratio (${outputRatio.toFixed(2)}x): response verbosity looks under control.`
+      ? `Relação saída/entrada alta (${outputRatio.toFixed(2)}x): considere respostas padrão mais curtas para tarefas rotineiras.`
+      : `Relação saída/entrada equilibrada (${outputRatio.toFixed(2)}x): o nível de verbosidade parece sob controle.`
   );
 
   if (topModel) {
-    insights.push(`Primary model in this slice: ${esc(topModel.model)} (${fmt(topModel.input + topModel.output)} tokens).`);
+    insights.push(`Modelo principal neste recorte: ${esc(topModel.model)} (${fmt(topModel.input + topModel.output)} tokens).`);
   }
   if (topProject) {
-    insights.push(`Top project by token volume: ${esc(topProject.project)} (${fmt(topProject.input + topProject.output)} tokens).`);
+    insights.push(`Projeto líder em volume de tokens: ${esc(topProject.project)} (${fmt(topProject.input + topProject.output)} tokens).`);
   }
   if (peakDay && peakDay.day) {
-    insights.push(`Peak day: ${fmtDate(peakDay.day)} (${fmt(peakDay.input + peakDay.output)} input+output tokens).`);
+    insights.push(`Dia de pico: ${fmtDate(peakDay.day)} (${fmt(peakDay.input + peakDay.output)} tokens de entrada+saída).`);
   }
 
   container.innerHTML = insights.map(item => `<li>${item}</li>`).join('') +
-    '<li class="hint">Insights update automatically when you change model filters and time range.</li>';
+    '<li class="hint">Os insights são atualizados automaticamente ao alterar filtros de modelo e período.</li>';
 }
 
 function renderDailyChart(daily) {
@@ -1241,10 +1240,10 @@ function renderDailyChart(daily) {
     data: {
       labels: daily.map(d => fmtDate(d.day)),
       datasets: [
-        { label: 'Input',          data: daily.map(d => d.input),          backgroundColor: TOKEN_COLORS.input,          stack: 'tokens' },
-        { label: 'Output',         data: daily.map(d => d.output),         backgroundColor: TOKEN_COLORS.output,         stack: 'tokens' },
-        { label: 'Cache Read',     data: daily.map(d => d.cache_read),     backgroundColor: TOKEN_COLORS.cache_read,     stack: 'tokens' },
-        { label: 'Cache Creation', data: daily.map(d => d.cache_creation), backgroundColor: TOKEN_COLORS.cache_creation, stack: 'tokens' },
+        { label: 'Entrada',        data: daily.map(d => d.input),          backgroundColor: TOKEN_COLORS.input,          stack: 'tokens' },
+        { label: 'Saída',          data: daily.map(d => d.output),         backgroundColor: TOKEN_COLORS.output,         stack: 'tokens' },
+        { label: 'Leitura de Cache',     data: daily.map(d => d.cache_read),     backgroundColor: TOKEN_COLORS.cache_read,     stack: 'tokens' },
+        { label: 'Criação de Cache', data: daily.map(d => d.cache_creation), backgroundColor: TOKEN_COLORS.cache_creation, stack: 'tokens' },
       ]
     },
     options: {
@@ -1288,8 +1287,8 @@ function renderProjectChart(byProject) {
     data: {
       labels: top.map(p => p.project.length > 22 ? '\u2026' + p.project.slice(-20) : p.project),
       datasets: [
-        { label: 'Input',  data: top.map(p => p.input),  backgroundColor: TOKEN_COLORS.input },
-        { label: 'Output', data: top.map(p => p.output), backgroundColor: TOKEN_COLORS.output },
+        { label: 'Entrada', data: top.map(p => p.input),  backgroundColor: TOKEN_COLORS.input },
+        { label: 'Saída',   data: top.map(p => p.output), backgroundColor: TOKEN_COLORS.output },
       ]
     },
     options: {
@@ -1308,7 +1307,7 @@ function renderSessionsTable(sessions) {
     const cost = calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
     const costCell = isBillable(s.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
-      : `<td class="cost-na">n/a</td>`;
+      : `<td class="cost-na">não se aplica</td>`;
     const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
     return `<tr>
       <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}" target="_blank" rel="noopener noreferrer">${esc(s.session_id)}&hellip;</a></td>
@@ -1362,7 +1361,7 @@ function renderModelCostTable(byModel) {
     const cost = calcCost(m.model, m.input, m.output, m.cache_read, m.cache_creation);
     const costCell = isBillable(m.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
-      : `<td class="cost-na">n/a</td>`;
+      : `<td class="cost-na">não se aplica</td>`;
     return `<tr>
       <td><span class="model-tag">${esc(m.model)}</span></td>
       <td class="num">${fmt(m.turns)}</td>
@@ -1445,37 +1444,37 @@ function downloadCSV(reportType, header, rows) {
 }
 
 function exportSessionsCSV() {
-  const header = ['Session', 'Project', 'Last Active', 'Duration (min)', 'Model', 'Turns', 'Input', 'Output', 'Cache Read', 'Cache Creation', 'Est. Cost'];
+  const header = ['Sessão', 'Projeto', 'Última atividade', 'Duração (min)', 'Modelo', 'Interações', 'Entrada', 'Saída', 'Leitura de cache', 'Criação de cache', 'Custo estimado'];
   const rows = lastFilteredSessions.map(s => {
     const cost = calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
     return [s.session_id, s.project, s.last, s.duration_min, s.model, s.turns, s.input, s.output, s.cache_read, s.cache_creation, cost.toFixed(4)];
   });
-  downloadCSV('sessions', header, rows);
+  downloadCSV('sessoes', header, rows);
 }
 
 function exportProjectsCSV() {
-  const header = ['Project', 'Sessions', 'Turns', 'Input', 'Output', 'Cache Read', 'Cache Creation', 'Est. Cost'];
+  const header = ['Projeto', 'Sessões', 'Interações', 'Entrada', 'Saída', 'Leitura de cache', 'Criação de cache', 'Custo estimado'];
   const rows = lastByProject.map(p => {
     return [p.project, p.sessions, p.turns, p.input, p.output, p.cache_read, p.cache_creation, p.cost.toFixed(4)];
   });
-  downloadCSV('projects', header, rows);
+  downloadCSV('projetos', header, rows);
 }
 
 // ── Rescan ────────────────────────────────────────────────────────────────
 async function triggerRescan() {
   const btn = document.getElementById('rescan-btn');
   btn.disabled = true;
-  btn.textContent = '\u21bb Scanning...';
+  btn.textContent = '\u21bb Escaneando...';
   try {
     const resp = await fetch('/api/rescan', { method: 'POST' });
     const d = await resp.json();
-    btn.textContent = '\u21bb Rescan (' + d.new + ' new, ' + d.updated + ' updated)';
+    btn.textContent = '\u21bb Reescanear (' + d.new + ' novos, ' + d.updated + ' atualizados)';
     await loadData();
   } catch(e) {
-    btn.textContent = '\u21bb Rescan (error)';
+    btn.textContent = '\u21bb Reescanear (erro)';
     console.error(e);
   }
-  setTimeout(() => { btn.textContent = '\u21bb Rescan'; btn.disabled = false; }, 3000);
+  setTimeout(() => { btn.textContent = '\u21bb Reescanear'; btn.disabled = false; }, 3000);
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -1487,7 +1486,7 @@ async function loadData() {
       document.body.innerHTML = '<div style="padding:40px;color:#f87171">' + esc(d.error) + '</div>';
       return;
     }
-    document.getElementById('meta').textContent = 'Updated: ' + d.generated_at + ' \u00b7 Auto-refresh in 30s';
+    document.getElementById('meta').textContent = 'Atualizado em: ' + d.generated_at + ' \u00b7 Atualização automática em 30s';
 
     const isFirstLoad = rawData === null;
     rawData = d;
