@@ -1017,7 +1017,7 @@ function readURLTheme() {
 function getInitialTheme() {
   const fromURL = readURLTheme();
   if (fromURL) return fromURL;
-  const saved = localStorage.getItem('dashboard-theme');
+  const saved = localStorage.getItem('claude_usage_theme');
   if (saved === 'light' || saved === 'dark') return saved;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
@@ -1025,7 +1025,7 @@ function getInitialTheme() {
 function applyTheme(theme) {
   const resolved = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = resolved;
-  localStorage.setItem('dashboard-theme', resolved);
+  localStorage.setItem('claude_usage_theme', resolved);
   const toggle = document.getElementById('toggle');
   if (toggle) toggle.checked = resolved === 'dark';
   return resolved;
