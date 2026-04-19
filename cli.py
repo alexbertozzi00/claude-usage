@@ -342,13 +342,13 @@ def build_insights(conn, window_days=14):
 
     recs = []
     if cache_ratio < 0.15:
-        recs.append("Low cache reuse: keep system prompts/instructions stable to raise cache hits.")
+        recs.append("Baixo reaproveitamento de cache: mantenha prompts/instruções estáveis para elevar acertos de cache.")
     else:
-        recs.append("Good cache reuse: preserve prompt structure to sustain lower effective input cost.")
+        recs.append("Bom reaproveitamento de cache: preserve a estrutura dos prompts para manter menor custo efetivo de entrada.")
     if output_ratio > 1.0:
-        recs.append("High output/input ratio: cap verbose responses for routine tasks to reduce output spend.")
+        recs.append("Relação saída/entrada alta: limite respostas muito longas em tarefas rotineiras para reduzir custo de saída.")
     else:
-        recs.append("Output/input ratio looks efficient for the current workload.")
+        recs.append("A relação saída/entrada está eficiente para a carga de trabalho atual.")
 
     return {
         "window_days": window_days,
@@ -378,25 +378,25 @@ def cmd_insights():
 
     print()
     hr("=")
-    print("  Usage Insights (last 14 days)")
+    print("  Insights de Uso (últimos 14 dias)")
     hr("=")
 
     if not insights["has_data"]:
-        print("  No usage data in the selected window.")
+        print("  Sem dados de uso na janela selecionada.")
         hr("=")
         print()
         return
 
-    print(f"  Sessions:         {insights['sessions']}")
-    print(f"  Turns:            {fmt(insights['turns'])}")
-    print(f"  Input tokens:     {fmt(insights['input_tokens'])}")
-    print(f"  Output tokens:    {fmt(insights['output_tokens'])}")
-    print(f"  Cache read ratio: {insights['cache_ratio']*100:.1f}% of input tokens")
-    print(f"  Top model:        {insights['top_model']} ({fmt(insights['top_model_tokens'])} tokens)")
-    print(f"  Top project:      {insights['top_project']} ({fmt(insights['top_project_tokens'])} tokens)")
-    print(f"  Peak day:         {fmt_date(insights['peak_day'])} ({fmt(insights['peak_day_tokens'])} tokens)")
+    print(f"  Sessões:                  {insights['sessions']}")
+    print(f"  Interações:               {fmt(insights['turns'])}")
+    print(f"  Tokens de entrada:        {fmt(insights['input_tokens'])}")
+    print(f"  Tokens de saída:          {fmt(insights['output_tokens'])}")
+    print(f"  Taxa de leitura de cache: {insights['cache_ratio']*100:.1f}% dos tokens de entrada")
+    print(f"  Modelo principal:         {insights['top_model']} ({fmt(insights['top_model_tokens'])} tokens)")
+    print(f"  Projeto principal:        {insights['top_project']} ({fmt(insights['top_project_tokens'])} tokens)")
+    print(f"  Dia de pico:              {fmt_date(insights['peak_day'])} ({fmt(insights['peak_day_tokens'])} tokens)")
     hr()
-    print("  Recommendations:")
+    print("  Recomendações:")
     for rec in insights["recommendations"]:
         print(f"    - {rec}")
     hr("=")
