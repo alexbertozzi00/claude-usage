@@ -99,6 +99,50 @@ def _claude_not_found_error() -> str:
     )
 
 
+def _try_direct_usage_command(claude_cmd: list[str], timeout_seconds: float) -> str:
+    """
+    Tenta obter o /usage em modo direto (sem sessão interativa),
+    por exemplo: `claude /usage`.
+    """
+    attempts = [
+        [*claude_cmd, "/usage"],
+        [*claude_cmd, "usage"],
+    ]
+    for cmd in attempts:
+        try:
+            done = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(4.0, timeout_seconds),
+            )
+        except Exception:
+            continue
+
+        merged = (done.stdout or "") + "\n" + (done.stderr or "")
+        clean = _strip_ansi(merged)
+        if clean.strip():
+            return clean
+    return ""
+
+
+def _snapshot_from_clean_text(clean: str, fallback_error: str = "") -> UsageSnapshot:
+    current_session = _parse_block(CURRENT_SESSION_RE, clean)
+    current_week = _parse_block(CURRENT_WEEK_RE, clean)
+    found_used = "% used" in clean
+    ok = bool(found_used and (current_session.used_percent is not None or current_week.used_percent is not None))
+    return UsageSnapshot(
+        ok=ok,
+        captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        current_session=current_session,
+        current_week=current_week,
+        raw_excerpt=clean[-1200:],
+        error="" if ok else (fallback_error or "Não foi possível extrair os dados de /usage."),
+    )
+
+
 def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
     """Fallback para Windows sem dependências externas (sem pty/termios)."""
     claude_cmd = _resolve_claude_command()
@@ -110,6 +154,12 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
             current_week=UsageBlock(),
             error=_claude_not_found_error(),
         )
+
+    direct = _try_direct_usage_command(claude_cmd, timeout_seconds)
+    if direct:
+        snap = _snapshot_from_clean_text(direct)
+        if snap.ok:
+            return snap
 
     try:
         proc = subprocess.Popen(
@@ -131,11 +181,24 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
         )
     try:
         output, _ = proc.communicate("/usage\n/exit\n", timeout=timeout_seconds)
-    except Exception as exc:
+    except subprocess.TimeoutExpired as exc:
         try:
             proc.kill()
         except Exception:
             pass
+        partial = _strip_ansi((exc.output or "") if isinstance(exc.output, str) else "")
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            raw_excerpt=partial[-1200:],
+            error=(
+                "Falha ao capturar saída do Claude CLI: timeout. "
+                "Tente usar `claude /usage` manualmente para validar o modo comando no seu ambiente."
+            ),
+        )
+    except Exception as exc:
         return UsageSnapshot(
             ok=False,
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -146,26 +209,12 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
 
     raw = output or ""
     clean = _strip_ansi(raw)
-
-    current_session = _parse_block(CURRENT_SESSION_RE, clean)
-    current_week = _parse_block(CURRENT_WEEK_RE, clean)
-    found_used = "% used" in clean
-    ok = bool(found_used and (current_session.used_percent is not None or current_week.used_percent is not None))
-
-    error = ""
-    if not ok:
-        error = (
+    return _snapshot_from_clean_text(
+        clean,
+        fallback_error=(
             "Não foi possível extrair os dados de /usage no Windows sem PTY. "
             "Se persistir, execute em WSL/Git Bash ou instale um backend de terminal compatível com ConPTY."
-        )
-
-    return UsageSnapshot(
-        ok=ok,
-        captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        current_session=current_session,
-        current_week=current_week,
-        raw_excerpt=clean[-1200:],
-        error=error,
+        ),
     )
 
 

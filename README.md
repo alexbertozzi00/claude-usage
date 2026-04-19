@@ -105,6 +105,7 @@ python cli.py scan --projects-dir /caminho/para/transcripts
 ```
 
 > No Windows, `live-usage` roda em modo compatível sem `pty/termios`.
+> O script tenta primeiro `claude /usage` (modo direto) e, se necessário, fallback interativo.
 > Se seu Claude CLI exigir TTY avançado, execute esse comando via WSL/Git Bash.
 
 O scanner é incremental — ele rastreia o caminho e o tempo de modificação de cada arquivo, então rodar `scan` novamente é rápido e processa apenas arquivos novos ou alterados.
