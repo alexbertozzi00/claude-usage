@@ -305,10 +305,10 @@ def render_session_history_html(session_data):
   .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px; }}
   .toolbar {{ display: flex; justify-content: flex-end; margin-bottom: 12px; }}
   #theme-toggle-button {{
-    font-size: 10px;
+    font-size: 17px;
     position: relative;
     display: inline-block;
-    width: 6.2em;
+    width: 7em;
     cursor: pointer;
   }}
   #toggle {{
@@ -477,10 +477,10 @@ def render_session_history_html(session_data):
   .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
   .back:hover {{ text-decoration: underline; }}
   #theme-toggle-button {{
-    font-size: 10px;
+    font-size: 17px;
     position: relative;
     display: inline-block;
-    width: 6.2em;
+    width: 7em;
     cursor: pointer;
   }}
   #toggle {{
@@ -601,10 +601,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   #theme-toggle-button {
-    font-size: 10px;
+    font-size: 17px;
     position: relative;
     display: inline-block;
-    width: 6.2em;
+    width: 7em;
     cursor: pointer;
   }
   #toggle {
