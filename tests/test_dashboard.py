@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+from datetime import timezone, timedelta
 from unittest.mock import patch
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from dashboard import (
     rename_session,
     DashboardHandler,
     HTML_TEMPLATE,
+    _format_timestamp,
 )
 
 try:
@@ -96,6 +98,15 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("hour", hour)
         self.assertIn("turns", hour)
 
+    def test_hourly_buckets_use_local_timezone(self):
+        data = get_dashboard_data(
+            db_path=self.db_path,
+            local_tz=timezone(timedelta(hours=-3)),
+        )
+        hourly = data["hourly_by_model"][0]
+        self.assertEqual(hourly["day"], "2026-04-08")
+        self.assertEqual(hourly["hour"], "06")
+
     def test_get_sessions_for_hour(self):
         data = get_sessions_for_hour("09", cutoff="2026-04-01", models=["claude-sonnet-4-6"], db_path=self.db_path)
         self.assertNotIn("error", data)
@@ -114,6 +125,18 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertEqual(data["hour"], "09")
         self.assertEqual(data["cutoff_ts"], "2026-04-08T09:15:00Z")
         self.assertEqual(len(data["sessions"]), 1)
+
+    def test_get_sessions_for_hour_uses_local_timezone(self):
+        data = get_sessions_for_hour(
+            "06",
+            cutoff="2026-04-01",
+            models=["claude-sonnet-4-6"],
+            db_path=self.db_path,
+            local_tz=timezone(timedelta(hours=-3)),
+        )
+        self.assertNotIn("error", data)
+        self.assertEqual(len(data["sessions"]), 1)
+        self.assertEqual(data["sessions"][0]["session_id_full"], "sess-abc123")
 
     def test_hourly_ignores_tool_marker_turns(self):
         conn = get_db(self.db_path)
@@ -177,6 +200,16 @@ class TestGetDashboardData(unittest.TestCase):
         session = data["sessions_all"][0]
         self.assertEqual(session["last"], "08/04/2026 10:00:00")
         self.assertRegex(data["generated_at"], r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}")
+
+
+class TestTimestampFormatting(unittest.TestCase):
+    def test_converts_utc_to_local_timezone_when_aware(self):
+        formatted = _format_timestamp(
+            "2026-04-19T20:12:00Z",
+            local_tz=timezone(timedelta(hours=-3)),
+        )
+
+        self.assertEqual(formatted, "19/04/2026 17:12:00")
 
 class TestSessionHistory(unittest.TestCase):
     def setUp(self):

@@ -10,7 +10,8 @@ import subprocess
 from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
+from collections import defaultdict
 from urllib.parse import parse_qs, unquote, urlparse
 
 from layout_components import render_app_footer, render_app_header
@@ -79,13 +80,21 @@ def _format_date(date_str):
         return date_str
 
 
-def _format_timestamp(timestamp_str):
-    """Convert ISO timestamp -> dd/MM/YYYY HH:MM:SS when possible."""
+def _format_timestamp(timestamp_str, *, to_local=True, local_tz=None):
+    """Convert ISO timestamp -> dd/MM/YYYY HH:MM:SS when possible.
+
+    By default, timezone-aware values are rendered in the local timezone so
+    session times match the operator's clock.
+    """
     if not timestamp_str:
         return ""
     try:
         normalized = timestamp_str.replace("Z", "+00:00")
         dt = datetime.fromisoformat(normalized)
+        if to_local and dt.tzinfo is not None:
+            dt = dt.astimezone(local_tz)
+        elif dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
         return dt.strftime("%d/%m/%Y %H:%M:%S")
     except Exception:
         try:
@@ -95,6 +104,20 @@ def _format_timestamp(timestamp_str):
             return datetime.strptime(base, fmt).strftime("%d/%m/%Y %H:%M:%S")
         except Exception:
             return timestamp_str
+
+
+def _to_local_datetime(timestamp_str, *, local_tz=None):
+    """Parse timestamp and normalize to local timezone when timezone-aware."""
+    if not timestamp_str:
+        return None
+    try:
+        normalized = str(timestamp_str).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is not None:
+            return dt.astimezone(local_tz)
+        return dt
+    except Exception:
+        return None
 
 
 def _display_project_name(project_name):
@@ -338,7 +361,7 @@ def get_usage_snapshot(timeout_seconds=8):
     }
 
 
-def get_dashboard_data(db_path=DB_PATH):
+def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado. Execute: python cli.py scan"}
 
@@ -356,58 +379,64 @@ def get_dashboard_data(db_path=DB_PATH):
     """).fetchall()
     all_models = [r["model"] for r in model_rows]
 
-    # ── Daily per-model, ALL history (client filters by range) ────────────────
-    daily_rows = conn.execute("""
+    turns_rows = conn.execute("""
         SELECT
-            substr(timestamp, 1, 10)   as day,
+            timestamp,
             COALESCE(model, 'unknown') as model,
-            SUM(input_tokens)          as input,
-            SUM(output_tokens)         as output,
-            SUM(cache_read_tokens)     as cache_read,
-            SUM(cache_creation_tokens) as cache_creation,
-            COUNT(*)                   as turns
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            COALESCE(has_tool_marker, 0) as has_tool_marker
         FROM turns
-        GROUP BY day, model
-        ORDER BY day, model
     """).fetchall()
+
+    daily_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
+    hourly_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
+
+    for row in turns_rows:
+        local_dt = _to_local_datetime(row["timestamp"], local_tz=local_tz)
+        if local_dt is None:
+            continue
+        day = local_dt.strftime("%Y-%m-%d")
+        hour = local_dt.strftime("%H")
+        model = row["model"] or "unknown"
+
+        daily = daily_acc[(day, model)]
+        daily["input"] += row["input_tokens"] or 0
+        daily["output"] += row["output_tokens"] or 0
+        daily["cache_read"] += row["cache_read_tokens"] or 0
+        daily["cache_creation"] += row["cache_creation_tokens"] or 0
+        daily["turns"] += 1
+
+        if (row["has_tool_marker"] or 0) == 0:
+            hourly = hourly_acc[(day, hour, model)]
+            hourly["input"] += row["input_tokens"] or 0
+            hourly["output"] += row["output_tokens"] or 0
+            hourly["cache_read"] += row["cache_read_tokens"] or 0
+            hourly["cache_creation"] += row["cache_creation_tokens"] or 0
+            hourly["turns"] += 1
 
     daily_by_model = [{
-        "day":            r["day"],
-        "model":          r["model"],
-        "input":          r["input"] or 0,
-        "output":         r["output"] or 0,
-        "cache_read":     r["cache_read"] or 0,
-        "cache_creation": r["cache_creation"] or 0,
-        "turns":          r["turns"] or 0,
-    } for r in daily_rows]
-
-    # ── Hourly per-model, ALL history (client filters by range) ──────────────
-    hourly_rows = conn.execute("""
-        SELECT
-            substr(timestamp, 1, 10)   as day,
-            substr(timestamp, 12, 2)   as hour,
-            COALESCE(model, 'unknown') as model,
-            SUM(input_tokens)          as input,
-            SUM(output_tokens)         as output,
-            SUM(cache_read_tokens)     as cache_read,
-            SUM(cache_creation_tokens) as cache_creation,
-            COUNT(*)                   as turns
-        FROM turns
-        WHERE COALESCE(has_tool_marker, 0) = 0
-        GROUP BY day, hour, model
-        ORDER BY day, hour, model
-    """).fetchall()
+        "day": day,
+        "model": model,
+        "input": vals["input"],
+        "output": vals["output"],
+        "cache_read": vals["cache_read"],
+        "cache_creation": vals["cache_creation"],
+        "turns": vals["turns"],
+    } for (day, model), vals in sorted(daily_acc.items())]
 
     hourly_by_model = [{
-        "day":    r["day"],
-        "hour":   r["hour"] or "00",
-        "model":  r["model"],
-        "input":  r["input"] or 0,
-        "output": r["output"] or 0,
-        "cache_read": r["cache_read"] or 0,
-        "cache_creation": r["cache_creation"] or 0,
-        "turns":  r["turns"] or 0,
-    } for r in hourly_rows]
+        "day": day,
+        "hour": hour,
+        "model": model,
+        "input": vals["input"],
+        "output": vals["output"],
+        "cache_read": vals["cache_read"],
+        "cache_creation": vals["cache_creation"],
+        "turns": vals["turns"],
+    } for (day, hour, model), vals in sorted(hourly_acc.items())]
 
     # ── All sessions (client filters by range and model) ──────────────────────
     session_rows = conn.execute("""
@@ -455,7 +484,7 @@ def get_dashboard_data(db_path=DB_PATH):
     }
 
 
-def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH):
+def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH, local_tz=None):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado."}
     if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
@@ -465,53 +494,81 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
     conn.row_factory = sqlite3.Row
     ensure_has_tool_marker_column(conn)
     try:
-        model_filter = [m for m in (models or []) if m]
-        where = ["substr(t.timestamp, 12, 2) = ?", "COALESCE(t.has_tool_marker, 0) = 0"]
-        params = [hour]
-        if cutoff:
-            where.append("substr(t.timestamp, 1, 10) >= ?")
-            params.append(cutoff)
-        if cutoff_ts:
-            where.append("t.timestamp >= ?")
-            params.append(cutoff_ts)
-        if model_filter:
-            where.append("COALESCE(t.model, 'unknown') IN (" + ",".join("?" for _ in model_filter) + ")")
-            params.extend(model_filter)
+        model_filter = {m for m in (models or []) if m}
+        cutoff_dt = _to_local_datetime(cutoff_ts, local_tz=local_tz) if cutoff_ts else None
 
-        rows = conn.execute(f"""
+        rows = conn.execute("""
             SELECT
                 t.session_id as session_id,
+                t.timestamp as timestamp,
+                COALESCE(t.model, 'unknown') as turn_model,
+                t.input_tokens as input_tokens,
+                t.output_tokens as output_tokens,
+                COALESCE(t.has_tool_marker, 0) as has_tool_marker,
                 COALESCE(s.custom_name, '') as custom_name,
                 COALESCE(s.project_name, 'unknown') as project_name,
-                COALESCE(s.model, COALESCE(t.model, 'unknown')) as model,
-                MAX(t.timestamp) as last_timestamp,
-                COUNT(*) as turns_at_hour,
-                SUM(t.input_tokens) as input_tokens,
-                SUM(t.output_tokens) as output_tokens
+                COALESCE(s.model, COALESCE(t.model, 'unknown')) as session_model
             FROM turns t
             LEFT JOIN sessions s ON s.session_id = t.session_id
-            WHERE {" AND ".join(where)}
-            GROUP BY t.session_id, s.custom_name, s.project_name, s.model, t.model
-            ORDER BY MAX(t.timestamp) DESC
-        """, params).fetchall()
+        """).fetchall()
 
+        session_acc = {}
+        for r in rows:
+            if (r["has_tool_marker"] or 0) != 0:
+                continue
+
+            local_dt = _to_local_datetime(r["timestamp"], local_tz=local_tz)
+            if local_dt is None:
+                continue
+
+            if local_dt.strftime("%H") != hour:
+                continue
+            if cutoff and local_dt.strftime("%Y-%m-%d") < cutoff:
+                continue
+            if cutoff_dt and local_dt < cutoff_dt:
+                continue
+            if model_filter and (r["turn_model"] or "unknown") not in model_filter:
+                continue
+
+            sid = r["session_id"] or ""
+            item = session_acc.get(sid)
+            if item is None:
+                item = {
+                    "session_id_full": sid,
+                    "session_id": sid[:8],
+                    "custom_name": r["custom_name"] or "",
+                    "project": _display_project_name(r["project_name"]),
+                    "model": r["session_model"] or "unknown",
+                    "last_ts": r["timestamp"] or "",
+                    "turns_at_hour": 0,
+                    "input": 0,
+                    "output": 0,
+                }
+                session_acc[sid] = item
+            if (r["timestamp"] or "") > item["last_ts"]:
+                item["last_ts"] = r["timestamp"] or ""
+            item["turns_at_hour"] += 1
+            item["input"] += r["input_tokens"] or 0
+            item["output"] += r["output_tokens"] or 0
+
+        sessions = sorted(session_acc.values(), key=lambda it: it["last_ts"], reverse=True)
         sessions = [{
-            "session_id_full": r["session_id"],
-            "session_id": (r["session_id"] or "")[:8],
-            "custom_name": r["custom_name"] or "",
-            "project": _display_project_name(r["project_name"]),
-            "model": r["model"] or "unknown",
-            "last": _format_timestamp(r["last_timestamp"] or ""),
-            "turns_at_hour": r["turns_at_hour"] or 0,
-            "input": r["input_tokens"] or 0,
-            "output": r["output_tokens"] or 0,
-        } for r in rows]
+            "session_id_full": s["session_id_full"],
+            "session_id": s["session_id"],
+            "custom_name": s["custom_name"],
+            "project": s["project"],
+            "model": s["model"],
+            "last": _format_timestamp(s["last_ts"], local_tz=local_tz),
+            "turns_at_hour": s["turns_at_hour"],
+            "input": s["input"],
+            "output": s["output"],
+        } for s in sessions]
 
         return {
             "hour": hour,
             "cutoff": cutoff or "",
             "cutoff_ts": cutoff_ts or "",
-            "models": model_filter,
+            "models": sorted(model_filter),
             "sessions": sessions,
             "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         }
@@ -1532,8 +1589,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-sep"></div>
   <div class="filter-label">Período</div>
   <div class="range-group">
-    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="24h" onclick="setRange('24h')">24h</button>
+    <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -1894,25 +1951,6 @@ function getLatestDataDay() {
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
 }
 
-function getLatestDataTimestamp() {
-  if (!rawData) return null;
-
-  const fromSessions = (rawData.sessions_all || [])
-    .map(s => s.last_iso)
-    .filter(Boolean)
-    .map(ts => ts.replace("Z", "+00:00"));
-  const fromHourly = (rawData.hourly_by_model || [])
-    .map(r => (r.day && r.hour ? `${r.day}T${r.hour}:00:00+00:00` : null))
-    .filter(Boolean);
-
-  const allTs = fromSessions.concat(fromHourly)
-    .map(ts => new Date(ts))
-    .filter(dt => !Number.isNaN(dt.getTime()));
-  if (!allTs.length) return null;
-
-  return allTs.reduce((max, dt) => (dt > max ? dt : max), allTs[0]);
-}
-
 function getRangeDayCount(cutoff) {
   const latestDataDay = getLatestDataDay();
   if (!latestDataDay) return 1;
@@ -1936,9 +1974,11 @@ function getRangeDayCount(cutoff) {
 function getRangeCutoff(range) {
   if (range === 'all') return null;
 
-  // For 1d we want only the current data day (exclusive "today" view),
-  // not a rolling 24h window.
-  if (range === '1d') return getLatestDataDay();
+  // "Hoje": sempre usa o dia corrente em UTC (00:00-23:59), independente
+  // de qual seja o último dia presente no payload.
+  if (range === '1d') {
+    return new Date().toISOString().slice(0, 10);
+  }
   if (range === '24h') return null;
 
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
@@ -1954,9 +1994,9 @@ function getRangeCutoff(range) {
 
 function getRangeTimestampCutoff(range) {
   if (range !== '24h') return null;
-  const latestTs = getLatestDataTimestamp();
-  if (!latestTs) return null;
-  const cutoff = new Date(latestTs.getTime() - 24 * 60 * 60 * 1000);
+  // "24h": janela móvel das últimas 24 horas a partir de agora.
+  // Na prática, isso combina horas de hoje + ontem conforme o horário atual.
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return cutoff.toISOString();
 }
 
