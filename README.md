@@ -9,8 +9,6 @@ Claude Code writes detailed usage logs locally — token counts, models, session
 
 ![Claude Usage Dashboard](docs/screenshot.png)
 
-**Created by:** [The Product Compass Newsletter](https://www.productcompass.pm)
-
 ---
 
 ## What this tracks

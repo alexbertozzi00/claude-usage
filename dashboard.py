@@ -897,7 +897,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <br>
       Este dashboard é um fork do projeto original <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>.
       <br>
-      Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Criado por: <a href="https://www.productcompass.pm" target="_blank">The Product Compass Newsletter</a> &nbsp;&middot;&nbsp; Licença: MIT
+      Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Licença: MIT
     </p>
   </div>
 </footer>
