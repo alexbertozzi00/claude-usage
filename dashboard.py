@@ -147,6 +147,29 @@ def get_dashboard_data(db_path=DB_PATH):
         "turns":          r["turns"] or 0,
     } for r in daily_rows]
 
+    # ── Hourly per-model, ALL history (client filters by range) ──────────────
+    hourly_rows = conn.execute("""
+        SELECT
+            substr(timestamp, 1, 10)   as day,
+            substr(timestamp, 12, 2)   as hour,
+            COALESCE(model, 'unknown') as model,
+            SUM(input_tokens)          as input,
+            SUM(output_tokens)         as output,
+            COUNT(*)                   as turns
+        FROM turns
+        GROUP BY day, hour, model
+        ORDER BY day, hour, model
+    """).fetchall()
+
+    hourly_by_model = [{
+        "day":    r["day"],
+        "hour":   r["hour"] or "00",
+        "model":  r["model"],
+        "input":  r["input"] or 0,
+        "output": r["output"] or 0,
+        "turns":  r["turns"] or 0,
+    } for r in hourly_rows]
+
     # ── All sessions (client filters by range and model) ──────────────────────
     session_rows = conn.execute("""
         SELECT
@@ -186,6 +209,7 @@ def get_dashboard_data(db_path=DB_PATH):
     return {
         "all_models":     all_models,
         "daily_by_model": daily_by_model,
+        "hourly_by_model": hourly_by_model,
         "sessions_all":   sessions_all,
         "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
@@ -985,6 +1009,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .pager-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pager-label { min-width: 100px; text-align: center; }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
+  .hourly-list { max-height: 320px; overflow-y: auto; padding-right: 4px; }
+  .hourly-row { display: grid; grid-template-columns: 70px 1fr 90px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 13px; }
+  .hourly-row:last-child { border-bottom: none; }
+  .hourly-track { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .hourly-fill { height: 100%; background: linear-gradient(90deg, #4f8ef7, #4ade80); }
   .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
@@ -1093,6 +1122,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="chart-card">
       <h2>Top Projetos por Tokens</h2>
       <div class="chart-wrap"><canvas id="chart-project"></canvas></div>
+    </div>
+    <div class="chart-card wide">
+      <h2>Atividade por Hora</h2>
+      <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
   </div>
   <div class="table-card">
@@ -1608,6 +1641,9 @@ function applyFilter() {
   const filteredDaily = rawData.daily_by_model.filter(r =>
     selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
   );
+  const filteredHourly = (rawData.hourly_by_model || []).filter(r =>
+    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+  );
 
   // Daily chart: aggregate by day
   const dailyMap = {};
@@ -1688,6 +1724,7 @@ function applyFilter() {
   renderTrendChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
+  renderHourlyActivity(filteredHourly);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
@@ -1899,6 +1936,36 @@ function renderProjectChart(byProject) {
       }
     }
   });
+}
+
+function renderHourlyActivity(hourlyRows) {
+  const container = document.getElementById('hourly-activity-list');
+  if (!container) return;
+
+  const base = Array.from({ length: 24 }, (_, hour) => ({
+    hour: String(hour).padStart(2, '0'),
+    turns: 0,
+    tokens: 0,
+  }));
+
+  for (const row of hourlyRows) {
+    const idx = Number.parseInt(row.hour, 10);
+    if (Number.isNaN(idx) || idx < 0 || idx > 23) continue;
+    base[idx].turns += row.turns || 0;
+    base[idx].tokens += (row.input || 0) + (row.output || 0);
+  }
+
+  const maxTokens = Math.max(1, ...base.map(r => r.tokens));
+  container.innerHTML = base.map(r => {
+    const widthPct = (r.tokens / maxTokens) * 100;
+    return `
+      <div class="hourly-row">
+        <div>${r.hour}:00</div>
+        <div class="hourly-track"><div class="hourly-fill" style="width:${widthPct}%"></div></div>
+        <div style="text-align:right">${r.turns.toLocaleString()}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderSessionsTable(sessions) {
