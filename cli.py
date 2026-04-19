@@ -5,6 +5,7 @@ Commands:
   scan      - Scan JSONL files and update the database
   today     - Print today's usage summary
   stats     - Print all-time usage statistics
+  insights  - Print actionable efficiency insights
   dashboard - Scan + open browser + start dashboard server
 """
 
@@ -280,6 +281,128 @@ def cmd_stats():
     conn.close()
 
 
+def build_insights(conn, window_days=14):
+    conn.row_factory = sqlite3.Row
+    cutoff = conn.execute(
+        "SELECT date('now', ?)",
+        (f"-{window_days} days",)
+    ).fetchone()[0]
+
+    summary = conn.execute("""
+        SELECT
+            COUNT(*) as turns,
+            COALESCE(SUM(input_tokens), 0) as inp,
+            COALESCE(SUM(output_tokens), 0) as out,
+            COALESCE(SUM(cache_read_tokens), 0) as cr,
+            COALESCE(SUM(cache_creation_tokens), 0) as cc,
+            COUNT(DISTINCT session_id) as sessions
+        FROM turns
+        WHERE substr(timestamp, 1, 10) >= ?
+    """, (cutoff,)).fetchone()
+
+    if not summary["turns"]:
+        return {"window_days": window_days, "has_data": False}
+
+    by_model = conn.execute("""
+        SELECT
+            COALESCE(model, 'unknown') as model,
+            SUM(input_tokens + output_tokens) as tokens
+        FROM turns
+        WHERE substr(timestamp, 1, 10) >= ?
+        GROUP BY model
+        ORDER BY tokens DESC
+        LIMIT 1
+    """, (cutoff,)).fetchone()
+
+    by_project = conn.execute("""
+        SELECT
+            COALESCE(s.project_name, 'unknown') as project_name,
+            SUM(t.input_tokens + t.output_tokens) as tokens
+        FROM turns t
+        LEFT JOIN sessions s ON s.session_id = t.session_id
+        WHERE substr(t.timestamp, 1, 10) >= ?
+        GROUP BY s.project_name
+        ORDER BY tokens DESC
+        LIMIT 1
+    """, (cutoff,)).fetchone()
+
+    peak_day = conn.execute("""
+        SELECT
+            substr(timestamp, 1, 10) as day,
+            SUM(input_tokens + output_tokens) as tokens
+        FROM turns
+        WHERE substr(timestamp, 1, 10) >= ?
+        GROUP BY day
+        ORDER BY tokens DESC
+        LIMIT 1
+    """, (cutoff,)).fetchone()
+
+    cache_ratio = (summary["cr"] / summary["inp"]) if summary["inp"] else 0.0
+    output_ratio = (summary["out"] / summary["inp"]) if summary["inp"] else 0.0
+
+    recs = []
+    if cache_ratio < 0.15:
+        recs.append("Low cache reuse: keep system prompts/instructions stable to raise cache hits.")
+    else:
+        recs.append("Good cache reuse: preserve prompt structure to sustain lower effective input cost.")
+    if output_ratio > 1.0:
+        recs.append("High output/input ratio: cap verbose responses for routine tasks to reduce output spend.")
+    else:
+        recs.append("Output/input ratio looks efficient for the current workload.")
+
+    return {
+        "window_days": window_days,
+        "has_data": True,
+        "turns": summary["turns"],
+        "sessions": summary["sessions"],
+        "input_tokens": summary["inp"],
+        "output_tokens": summary["out"],
+        "cache_read_tokens": summary["cr"],
+        "cache_creation_tokens": summary["cc"],
+        "cache_ratio": cache_ratio,
+        "output_ratio": output_ratio,
+        "top_model": by_model["model"] if by_model else "unknown",
+        "top_model_tokens": by_model["tokens"] if by_model else 0,
+        "top_project": by_project["project_name"] if by_project else "unknown",
+        "top_project_tokens": by_project["tokens"] if by_project else 0,
+        "peak_day": peak_day["day"] if peak_day else "",
+        "peak_day_tokens": peak_day["tokens"] if peak_day else 0,
+        "recommendations": recs,
+    }
+
+
+def cmd_insights():
+    conn = require_db()
+    insights = build_insights(conn, window_days=14)
+    conn.close()
+
+    print()
+    hr("=")
+    print("  Usage Insights (last 14 days)")
+    hr("=")
+
+    if not insights["has_data"]:
+        print("  No usage data in the selected window.")
+        hr("=")
+        print()
+        return
+
+    print(f"  Sessions:         {insights['sessions']}")
+    print(f"  Turns:            {fmt(insights['turns'])}")
+    print(f"  Input tokens:     {fmt(insights['input_tokens'])}")
+    print(f"  Output tokens:    {fmt(insights['output_tokens'])}")
+    print(f"  Cache read ratio: {insights['cache_ratio']*100:.1f}% of input tokens")
+    print(f"  Top model:        {insights['top_model']} ({fmt(insights['top_model_tokens'])} tokens)")
+    print(f"  Top project:      {insights['top_project']} ({fmt(insights['top_project_tokens'])} tokens)")
+    print(f"  Peak day:         {fmt_date(insights['peak_day'])} ({fmt(insights['peak_day_tokens'])} tokens)")
+    hr()
+    print("  Recommendations:")
+    for rec in insights["recommendations"]:
+        print(f"    - {rec}")
+    hr("=")
+    print()
+
+
 def cmd_dashboard(projects_dir=None):
     import webbrowser
     import threading
@@ -312,6 +435,7 @@ Usage:
   python cli.py scan [--projects-dir PATH]   Scan JSONL files and update database
   python cli.py today                        Show today's usage summary
   python cli.py stats                        Show all-time statistics
+  python cli.py insights                     Show actionable efficiency insights
   python cli.py dashboard [--projects-dir PATH]  Scan + start dashboard
 """
 
@@ -319,6 +443,7 @@ COMMANDS = {
     "scan": cmd_scan,
     "today": cmd_today,
     "stats": cmd_stats,
+    "insights": cmd_insights,
     "dashboard": cmd_dashboard,
 }
 

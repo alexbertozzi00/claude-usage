@@ -1,7 +1,12 @@
 """Tests for cli.py - pricing, formatting, and cost calculation."""
 
 import unittest
+import tempfile
+import os
+from pathlib import Path
 from cli import get_pricing, calc_cost, fmt, fmt_cost, fmt_date, fmt_timestamp, PRICING
+from cli import build_insights
+from scanner import get_db, init_db, upsert_sessions, insert_turns
 
 
 class TestGetPricing(unittest.TestCase):
@@ -161,6 +166,63 @@ class TestPricingConsistency(unittest.TestCase):
             p = get_pricing(model)
             self.assertEqual(p["input"], 1.00, f"{model} input price wrong")
             self.assertEqual(p["output"], 5.00, f"{model} output price wrong")
+
+
+class TestBuildInsights(unittest.TestCase):
+    def setUp(self):
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpfile.close()
+        self.db_path = Path(self.tmpfile.name)
+        conn = get_db(self.db_path)
+        init_db(conn)
+        sessions = [{
+            "session_id": "sess-insight-1", "project_name": "acme/api",
+            "first_timestamp": "2026-04-18T10:00:00Z",
+            "last_timestamp": "2026-04-18T11:00:00Z",
+            "git_branch": "main", "model": "claude-sonnet-4-6",
+            "total_input_tokens": 3000, "total_output_tokens": 1000,
+            "total_cache_read": 600, "total_cache_creation": 50,
+            "turn_count": 3,
+        }]
+        upsert_sessions(conn, sessions)
+        turns = [
+            {
+                "session_id": "sess-insight-1", "timestamp": "2026-04-18T10:20:00Z",
+                "model": "claude-sonnet-4-6", "input_tokens": 1000,
+                "output_tokens": 400, "cache_read_tokens": 300,
+                "cache_creation_tokens": 20, "tool_name": None, "cwd": "/tmp",
+            },
+            {
+                "session_id": "sess-insight-1", "timestamp": "2026-04-18T10:50:00Z",
+                "model": "claude-sonnet-4-6", "input_tokens": 2000,
+                "output_tokens": 600, "cache_read_tokens": 300,
+                "cache_creation_tokens": 30, "tool_name": None, "cwd": "/tmp",
+            },
+        ]
+        insert_turns(conn, turns)
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def test_build_insights_with_data(self):
+        conn = get_db(self.db_path)
+        insights = build_insights(conn, window_days=30)
+        conn.close()
+        self.assertTrue(insights["has_data"])
+        self.assertEqual(insights["sessions"], 1)
+        self.assertEqual(insights["turns"], 2)
+        self.assertEqual(insights["top_model"], "claude-sonnet-4-6")
+        self.assertEqual(insights["top_project"], "acme/api")
+        self.assertAlmostEqual(insights["cache_ratio"], 0.2)
+        self.assertGreaterEqual(len(insights["recommendations"]), 2)
+
+    def test_build_insights_no_data_in_window(self):
+        conn = get_db(self.db_path)
+        insights = build_insights(conn, window_days=0)
+        conn.close()
+        self.assertFalse(insights["has_data"])
 
 
 if __name__ == "__main__":
