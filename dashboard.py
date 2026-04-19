@@ -753,7 +753,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   header h1 { margin: 0; display: flex; align-items: center; }
   .logomarca { display: block; height: 36px; width: auto; max-width: min(320px, 48vw); object-fit: contain; }
-  header .meta { color: var(--muted); font-size: 12px; }
+  .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .header-actions { display: flex; align-items: center; gap: 8px; }
   #theme-toggle-button {
@@ -807,6 +807,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .range-btn.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  .container > .meta { margin-bottom: 12px; }
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
@@ -908,7 +909,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <body>
 <header>
   <h1><img class="logomarca" src="/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
-  <div class="meta" id="meta">Carregando...</div>
   <div class="header-controls">
     <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
@@ -944,6 +944,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <div class="container">
+  <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
