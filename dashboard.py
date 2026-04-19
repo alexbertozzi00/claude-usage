@@ -12,6 +12,18 @@ from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
+FAVICON_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>
+<rect width='16' height='16' fill='#03050e'/>
+<rect x='3' y='4' width='10' height='7' fill='#d37756'/>
+<rect x='2' y='7' width='12' height='2' fill='#d37756'/>
+<rect x='5' y='6' width='1' height='1' fill='#03050e'/>
+<rect x='10' y='6' width='1' height='1' fill='#03050e'/>
+<rect x='4' y='11' width='1' height='2' fill='#d37756'/>
+<rect x='6' y='11' width='1' height='2' fill='#d37756'/>
+<rect x='9' y='11' width='1' height='2' fill='#d37756'/>
+<rect x='11' y='11' width='1' height='2' fill='#d37756'/>
+</svg>"""
+FAVICON_BYTES = FAVICON_SVG.encode("utf-8")
 
 
 def _format_date(date_str):
@@ -276,6 +288,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Histórico da Sessão</title>
 <style>
   :root, [data-theme="dark"] {{
@@ -443,6 +456,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Sessão {sid}</title>
 <style>
   :root, [data-theme="dark"] {{
@@ -633,6 +647,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Painel de Uso do Claude Code</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -1017,7 +1032,7 @@ function readURLTheme() {
 function getInitialTheme() {
   const fromURL = readURLTheme();
   if (fromURL) return fromURL;
-  const saved = localStorage.getItem('dashboard-theme');
+  const saved = localStorage.getItem('claude_usage_theme');
   if (saved === 'light' || saved === 'dark') return saved;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
@@ -1025,7 +1040,7 @@ function getInitialTheme() {
 function applyTheme(theme) {
   const resolved = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = resolved;
-  localStorage.setItem('dashboard-theme', resolved);
+  localStorage.setItem('claude_usage_theme', resolved);
   const toggle = document.getElementById('toggle');
   if (toggle) toggle.checked = resolved === 'dark';
   return resolved;
@@ -1637,6 +1652,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path in ("/favicon.svg", "/favicon.ico"):
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(FAVICON_BYTES)))
+            self.end_headers()
+            self.wfile.write(FAVICON_BYTES)
 
         else:
             self.send_response(404)
