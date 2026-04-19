@@ -262,6 +262,11 @@ class TestDashboardHTTP(unittest.TestCase):
         self.assertIn('id="sessions-pager"', HTML_TEMPLATE)
         self.assertIn("setSessionsPage", HTML_TEMPLATE)
 
+    def test_template_formats_long_session_duration_in_hours(self):
+        self.assertIn("formatSessionDuration", HTML_TEMPLATE)
+        self.assertIn("durationMin >= 60", HTML_TEMPLATE)
+        self.assertIn("toFixed(1)} h", HTML_TEMPLATE)
+
     def test_template_mentions_auto_refresh_toggle(self):
         self.assertIn('id="refresh-toggle-input"', HTML_TEMPLATE)
         self.assertIn("onAutoRefreshToggle", HTML_TEMPLATE)

@@ -2366,6 +2366,13 @@ function renderHourlyActivity(hourlyRows, cutoff) {
 }
 
 function renderSessionsTable(sessions) {
+  const formatSessionDuration = (durationMinRaw) => {
+    const durationMin = Number.parseFloat(durationMinRaw);
+    if (!Number.isFinite(durationMin) || durationMin < 0) return '0m';
+    if (durationMin >= 60) return `${(durationMin / 60).toFixed(1)} h`;
+    return `${durationMin}m`;
+  };
+
   document.getElementById('sessions-body').innerHTML = sessions.map(s => {
     const cost = calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
     const costCell = isBillable(s.model)
@@ -2379,7 +2386,7 @@ function renderSessionsTable(sessions) {
       <td>${esc(s.project)}</td>
       <td>${esc(sessionName)}</td>
       <td class="muted">${esc(s.last)}</td>
-      <td class="muted">${esc(s.duration_min)}m</td>
+      <td class="muted">${esc(formatSessionDuration(s.duration_min))}</td>
       <td><span class="model-tag">${esc(s.model)}</span></td>
       <td class="num">${s.turns}</td>
       <td class="num">${fmt(s.input)}</td>
