@@ -176,6 +176,38 @@ def _parse_usage_percent(value):
         return None
 
 
+def _parse_usage_tokens(value):
+    if value is None:
+        return None
+    try:
+        cleaned = str(value).strip().lower()
+        cleaned = cleaned.replace("tokens", "").replace("token", "")
+        cleaned = cleaned.replace(",", "").replace("_", "").strip()
+        if cleaned == "":
+            return None
+        return int(float(cleaned))
+    except Exception:
+        return None
+
+
+def _extract_usage_block(payload, key):
+    block = payload.get(key, {}) or {}
+    return {
+        "used_percent": _parse_usage_percent(block.get("used_percent")),
+        "available_percent": _parse_usage_percent(block.get("available_percent")),
+        "used_tokens": _parse_usage_tokens(
+            block.get("used_tokens", block.get("used_token_count"))
+        ),
+        "available_tokens": _parse_usage_tokens(
+            block.get("available_tokens", block.get("remaining_tokens"))
+        ),
+        "limit_tokens": _parse_usage_tokens(
+            block.get("limit_tokens", block.get("token_limit"))
+        ),
+        "resets_at": str(block.get("resets_at") or ""),
+    }
+
+
 def _parse_usage_text(stdout):
     text = (stdout or "").strip()
     session_used = session_avail = week_used = week_avail = None
@@ -209,11 +241,17 @@ def _parse_usage_text(stdout):
         "current_session": {
             "used_percent": session_used,
             "available_percent": session_avail,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": session_resets,
         },
         "current_week": {
             "used_percent": week_used,
             "available_percent": week_avail,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": week_resets,
         },
     }
@@ -251,16 +289,8 @@ def get_usage_snapshot(timeout_seconds=8):
                     return {
                         "ok": True,
                         "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "current_session": {
-                            "used_percent": _parse_usage_percent(payload.get("current_session", {}).get("used_percent")),
-                            "available_percent": _parse_usage_percent(payload.get("current_session", {}).get("available_percent")),
-                            "resets_at": str(payload.get("current_session", {}).get("resets_at") or ""),
-                        },
-                        "current_week": {
-                            "used_percent": _parse_usage_percent(payload.get("current_week", {}).get("used_percent")),
-                            "available_percent": _parse_usage_percent(payload.get("current_week", {}).get("available_percent")),
-                            "resets_at": str(payload.get("current_week", {}).get("resets_at") or ""),
-                        },
+                        "current_session": _extract_usage_block(payload, "current_session"),
+                        "current_week": _extract_usage_block(payload, "current_week"),
                         "raw_excerpt": stdout[:2000],
                         "error": "",
                     }
@@ -290,11 +320,17 @@ def get_usage_snapshot(timeout_seconds=8):
         "current_session": {
             "used_percent": None,
             "available_percent": None,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": "",
         },
         "current_week": {
             "used_percent": None,
             "available_percent": None,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": "",
         },
         "raw_excerpt": last_excerpt[:2000],
@@ -353,6 +389,8 @@ def get_dashboard_data(db_path=DB_PATH):
             COALESCE(model, 'unknown') as model,
             SUM(input_tokens)          as input,
             SUM(output_tokens)         as output,
+            SUM(cache_read_tokens)     as cache_read,
+            SUM(cache_creation_tokens) as cache_creation,
             COUNT(*)                   as turns
         FROM turns
         WHERE COALESCE(has_tool_marker, 0) = 0
@@ -366,6 +404,8 @@ def get_dashboard_data(db_path=DB_PATH):
         "model":  r["model"],
         "input":  r["input"] or 0,
         "output": r["output"] or 0,
+        "cache_read": r["cache_read"] or 0,
+        "cache_creation": r["cache_creation"] or 0,
         "turns":  r["turns"] or 0,
     } for r in hourly_rows]
 
@@ -394,6 +434,7 @@ def get_dashboard_data(db_path=DB_PATH):
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
+            "last_iso":      r["last_timestamp"] or "",
             "duration_min":  duration_min,
             "model":         r["model"] or "unknown",
             "turns":         r["turn_count"] or 0,
@@ -414,7 +455,7 @@ def get_dashboard_data(db_path=DB_PATH):
     }
 
 
-def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
+def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado."}
     if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
@@ -430,6 +471,9 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
         if cutoff:
             where.append("substr(t.timestamp, 1, 10) >= ?")
             params.append(cutoff)
+        if cutoff_ts:
+            where.append("t.timestamp >= ?")
+            params.append(cutoff_ts)
         if model_filter:
             where.append("COALESCE(t.model, 'unknown') IN (" + ",".join("?" for _ in model_filter) + ")")
             params.extend(model_filter)
@@ -466,6 +510,7 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
         return {
             "hour": hour,
             "cutoff": cutoff or "",
+            "cutoff_ts": cutoff_ts or "",
             "models": model_filter,
             "sessions": sessions,
             "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -1036,6 +1081,9 @@ def render_hour_sessions_html(data):
 
     hour = escape(f"{data.get('hour', '00')}:00")
     cutoff = escape(data.get("cutoff") or "início")
+    cutoff_ts = (data.get("cutoff_ts") or "").strip()
+    if cutoff_ts:
+        cutoff = escape(_format_timestamp(cutoff_ts))
     models = data.get("models") or []
     models_text = ", ".join(escape(m) for m in models) if models else "todos"
     header_html = render_app_header(
@@ -1401,6 +1449,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hourly-track { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
   .hourly-fill { height: 100%; background: linear-gradient(90deg, #4f8ef7, #4ade80); }
   .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .usage-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .usage-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .usage-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: transparent; }
+  .usage-box h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
+  .usage-line { font-size: 13px; margin-bottom: 4px; color: var(--text); }
+  .usage-line .muted { font-size: 12px; }
+  .usage-error { color: #f87171; font-size: 12px; margin-top: 8px; }
+  .usage-hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
@@ -1477,6 +1533,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-label">Período</div>
   <div class="range-group">
     <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
+    <button class="range-btn" data-range="24h" onclick="setRange('24h')">24h</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -1488,6 +1545,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
+  <div class="usage-panel">
+    <div class="section-title">Uso da Cota Claude (/usage)</div>
+    <div id="usage-panel-content" class="usage-panel-grid"></div>
+    <div class="usage-hint">Painel adicional com dados de <code>claude /usage --json</code> (quando disponível no ambiente).</div>
+  </div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
@@ -1743,6 +1805,7 @@ function calcCost(model, inp, out, cacheRead, cacheCreation) {
 
 // ── Formatting ─────────────────────────────────────────────────────────────
 function fmt(n) {
+  if (n === null || n === undefined) return '-';
   if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
   if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
   if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
@@ -1757,6 +1820,49 @@ function fmtDate(isoDay) {
 function fmtCost(c)    { return '$' + c.toFixed(4); }
 function fmtCostBig(c) { return '$' + c.toFixed(2); }
 function cssVar(name)  { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function fmtPct(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+  return Number(n).toFixed(1) + '%';
+}
+
+function renderUsageBlock(title, block) {
+  const usedTokens = block?.used_tokens;
+  const availableTokens = block?.available_tokens;
+  const limitTokens = block?.limit_tokens;
+  const resetsAt = block?.resets_at || '-';
+  return `
+    <div class="usage-box">
+      <h3>${esc(title)}</h3>
+      <div class="usage-line"><strong>Gasto:</strong> ${fmtPct(block?.used_percent)} <span class="muted">(${fmt(usedTokens)} tokens)</span></div>
+      <div class="usage-line"><strong>Restante:</strong> ${fmtPct(block?.available_percent)} <span class="muted">(${fmt(availableTokens)} tokens)</span></div>
+      <div class="usage-line"><strong>Limite:</strong> ${fmt(limitTokens)} tokens</div>
+      <div class="usage-line"><strong>Reset:</strong> ${esc(String(resetsAt))}</div>
+    </div>
+  `;
+}
+
+function renderUsagePanel(snapshot) {
+  const el = document.getElementById('usage-panel-content');
+  if (!el) return;
+  if (!snapshot || !snapshot.ok) {
+    const err = snapshot?.error ? esc(String(snapshot.error)) : 'Não foi possível obter o snapshot de uso agora.';
+    el.innerHTML = `<div class="usage-error">${err}</div>`;
+    return;
+  }
+  el.innerHTML =
+    renderUsageBlock('Sessão atual', snapshot.current_session || {}) +
+    renderUsageBlock('Semana atual', snapshot.current_week || {});
+}
+
+async function loadUsageSnapshot() {
+  try {
+    const resp = await fetch('/api/usage');
+    const usage = await resp.json();
+    renderUsagePanel(usage);
+  } catch (e) {
+    renderUsagePanel({ ok: false, error: 'Falha ao carregar /api/usage.' });
+  }
+}
 
 // ── Chart colors ───────────────────────────────────────────────────────────
 const TOKEN_COLORS = {
@@ -1769,14 +1875,15 @@ const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6
 
 // ── Time range ─────────────────────────────────────────────────────────────
 const RANGE_LABELS = {
-  '1d': 'Último dia',
+  '1d': 'Hoje',
+  '24h': 'Últimas 24 horas',
   '7d': 'Últimos 7 dias',
   '30d': 'Últimos 30 dias',
   '90d': 'Últimos 90 dias',
   '180d': 'Últimos 6 meses',
   'all': 'Período completo',
 };
-const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
+const RANGE_TICKS  = { '1d': 6, '24h': 8, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
 function getLatestDataDay() {
   if (!rawData) return null;
@@ -1785,6 +1892,25 @@ function getLatestDataDay() {
   const allDays = fromSessions.concat(fromDaily);
   if (!allDays.length) return null;
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
+}
+
+function getLatestDataTimestamp() {
+  if (!rawData) return null;
+
+  const fromSessions = (rawData.sessions_all || [])
+    .map(s => s.last_iso)
+    .filter(Boolean)
+    .map(ts => ts.replace("Z", "+00:00"));
+  const fromHourly = (rawData.hourly_by_model || [])
+    .map(r => (r.day && r.hour ? `${r.day}T${r.hour}:00:00+00:00` : null))
+    .filter(Boolean);
+
+  const allTs = fromSessions.concat(fromHourly)
+    .map(ts => new Date(ts))
+    .filter(dt => !Number.isNaN(dt.getTime()));
+  if (!allTs.length) return null;
+
+  return allTs.reduce((max, dt) => (dt > max ? dt : max), allTs[0]);
 }
 
 function getRangeDayCount(cutoff) {
@@ -1809,20 +1935,34 @@ function getRangeDayCount(cutoff) {
 
 function getRangeCutoff(range) {
   if (range === 'all') return null;
-  const daysByRange = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
+
+  // For 1d we want only the current data day (exclusive "today" view),
+  // not a rolling 24h window.
+  if (range === '1d') return getLatestDataDay();
+  if (range === '24h') return null;
+
+  const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
 
   // Use the latest day present in payload as reference. This avoids empty
   // dashboards when the client clock/timezone is skewed relative to data.
   const latestDataDay = getLatestDataDay();
   const base = latestDataDay ? new Date(latestDataDay + 'T00:00:00Z') : new Date();
-  base.setUTCDate(base.getUTCDate() - days);
+  base.setUTCDate(base.getUTCDate() - days + 1);
   return base.toISOString().slice(0, 10);
+}
+
+function getRangeTimestampCutoff(range) {
+  if (range !== '24h') return null;
+  const latestTs = getLatestDataTimestamp();
+  if (!latestTs) return null;
+  const cutoff = new Date(latestTs.getTime() - 24 * 60 * 60 * 1000);
+  return cutoff.toISOString();
 }
 
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
-  return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
+  return ['1d', '24h', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
 function readURLTheme() {
@@ -2043,14 +2183,47 @@ function applyFilter() {
   if (!rawData) return;
 
   const cutoff = getRangeCutoff(selectedRange);
+  const cutoffTs = getRangeTimestampCutoff(selectedRange);
 
-  // Filter daily rows by model + date range
-  const filteredDaily = rawData.daily_by_model.filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
-  );
-  const filteredHourly = (rawData.hourly_by_model || []).filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
-  );
+  const is24h = selectedRange === '24h';
+  const cutoffTsMs = cutoffTs ? Date.parse(cutoffTs) : null;
+  const filteredHourly = (rawData.hourly_by_model || []).filter(r => {
+    if (!selectedModels.has(r.model)) return false;
+    if (is24h) {
+      const rowTs = Date.parse(`${r.day}T${r.hour}:00:00Z`);
+      return Number.isFinite(rowTs) && rowTs >= cutoffTsMs;
+    }
+    return !cutoff || r.day >= cutoff;
+  });
+
+  // Filter daily rows by model + date range (24h is aggregated from hourly)
+  const filteredDaily = is24h
+    ? (() => {
+      const byDayModel = {};
+      for (const r of filteredHourly) {
+        const key = `${r.day}__${r.model}`;
+        if (!byDayModel[key]) {
+          byDayModel[key] = {
+            day: r.day,
+            model: r.model,
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+            turns: 0,
+          };
+        }
+        byDayModel[key].input += r.input || 0;
+        byDayModel[key].output += r.output || 0;
+        byDayModel[key].cache_read += r.cache_read || 0;
+        byDayModel[key].cache_creation += r.cache_creation || 0;
+        byDayModel[key].turns += r.turns || 0;
+      }
+      return Object.values(byDayModel);
+    })()
+    : rawData.daily_by_model.filter(r =>
+      selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+    );
 
   // Daily chart: aggregate by day
   const dailyMap = {};
@@ -2077,9 +2250,14 @@ function applyFilter() {
   }
 
   // Filter sessions by model + date range
-  const filteredSessions = rawData.sessions_all.filter(s =>
-    selectedModels.has(s.model) && (!cutoff || s.last_date >= cutoff)
-  );
+  const filteredSessions = rawData.sessions_all.filter(s => {
+    if (!selectedModels.has(s.model)) return false;
+    if (is24h) {
+      const sessionTs = Date.parse((s.last_iso || '').replace("Z", "+00:00"));
+      return Number.isFinite(sessionTs) && sessionTs >= cutoffTsMs;
+    }
+    return !cutoff || s.last_date >= cutoff;
+  });
 
   // Add session counts into modelMap
   for (const s of filteredSessions) {
@@ -2131,7 +2309,7 @@ function applyFilter() {
   renderTrendChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
-  renderHourlyActivity(filteredHourly, cutoff);
+  renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
@@ -2345,7 +2523,7 @@ function renderProjectChart(byProject) {
   });
 }
 
-function renderHourlyActivity(hourlyRows, cutoff) {
+function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
   const container = document.getElementById('hourly-activity-list');
   const meta = document.getElementById('hourly-activity-meta');
   if (!container) return;
@@ -2377,7 +2555,8 @@ function renderHourlyActivity(hourlyRows, cutoff) {
 
   const selectedModelsParam = encodeURIComponent(Array.from(selectedModels).join(','));
   const cutoffParam = encodeURIComponent(cutoff || '');
-  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&models=${selectedModelsParam}`;
+  const cutoffTsParam = encodeURIComponent(cutoffTs || '');
+  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
 
   container.innerHTML = withAverages.map(r => {
     const widthPct = (r.avgTokens / maxTokens) * 100;
@@ -2651,6 +2830,7 @@ async function loadData() {
     }
 
     applyFilter();
+    await loadUsageSnapshot();
   } catch(e) {
     console.error(e);
   }
@@ -2702,9 +2882,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
             qs = parse_qs(parsed.query or "")
             cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
+            cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
             models_raw = (qs.get("models", [""])[0] or "").strip()
             models = [m.strip() for m in models_raw.split(",") if m.strip()]
-            data = get_sessions_for_hour(hour, cutoff=cutoff, models=models)
+            data = get_sessions_for_hour(hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models)
             body = render_hour_sessions_html(data).encode("utf-8")
             status_code = 404 if "error" in data else 200
             self.send_response(status_code)
