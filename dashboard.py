@@ -2263,8 +2263,7 @@ function renderTrendChart(daily) {
 function updateTrendChartVisibility() {
   const trendCard = document.getElementById('trend-chart-card');
   if (!trendCard) return;
-  const shouldHide = selectedRange === '1d';
-  trendCard.style.display = shouldHide ? 'none' : '';
+  trendCard.style.display = '';
 }
 
 function renderModelChart(byModel) {
