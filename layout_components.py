@@ -5,13 +5,15 @@ layout_components.py - Shared HTML layout fragments used by dashboard pages.
 from html import escape
 
 
-def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar ao painel"):
+def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar ao painel", show_back_link=True, right_html=""):
     """Render a lightweight shared page header."""
     safe_title = escape(title or "ClaudeFlow")
     safe_subtitle = escape(subtitle or "")
     safe_back_href = escape(back_href or "/")
     safe_back_label = escape(back_label or "← Voltar ao painel")
     subtitle_html = f'<div class="app-header-subtitle">{safe_subtitle}</div>' if safe_subtitle else ""
+    back_html = f'<a class="app-back-link" href="{safe_back_href}">{safe_back_label}</a>' if show_back_link else ""
+    right_block = f'<div class="app-header-right">{right_html}</div>' if right_html else ""
 
     return (
         '<header class="app-header">'
@@ -22,7 +24,8 @@ def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar 
         f'<h1 class="app-header-title">{safe_title}</h1>'
         f"{subtitle_html}"
         "</div>"
-        f'<a class="app-back-link" href="{safe_back_href}">{safe_back_label}</a>'
+        f"{right_block}"
+        f"{back_html}"
         "</header>"
     )
 
