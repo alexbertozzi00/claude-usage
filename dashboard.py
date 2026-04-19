@@ -601,10 +601,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   #theme-toggle-button {
-    font-size: 17px;
+    /* font-size: 17px; */
     position: relative;
     display: inline-block;
-    width: 7em;
+    width: 59px;
     cursor: pointer;
   }
   #toggle {
@@ -627,7 +627,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #toggle:checked + svg #cloud { opacity: 0; }
   #stars { opacity: 0; }
   #toggle:checked + svg #stars { opacity: 1; }
-  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 4px; }
+  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
