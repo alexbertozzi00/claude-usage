@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import time
 import webbrowser
@@ -69,11 +71,49 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
     return _capture_usage_posix(timeout_seconds=timeout_seconds)
 
 
+def _resolve_claude_command() -> list[str] | None:
+    """
+    Resolve o comando do Claude CLI.
+
+    Prioridade:
+    1) variável de ambiente CLAUDE_BIN (aceita comando completo)
+    2) binários comuns no PATH (claude/claude.cmd/claude.exe/claude.bat)
+    """
+    from_env = (os.environ.get("CLAUDE_BIN") or "").strip()
+    if from_env:
+        return shlex.split(from_env, posix=(os.name != "nt"))
+
+    candidates = ["claude", "claude.cmd", "claude.exe", "claude.bat"]
+    for name in candidates:
+        found = shutil.which(name)
+        if found:
+            return [found]
+    return None
+
+
+def _claude_not_found_error() -> str:
+    return (
+        "Comando 'claude' não encontrado no PATH. "
+        "Instale o Claude Code CLI e/ou defina a variável CLAUDE_BIN "
+        "(ex.: CLAUDE_BIN='claude' ou CLAUDE_BIN='C:\\\\...\\\\claude.cmd')."
+    )
+
+
 def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
     """Fallback para Windows sem dependências externas (sem pty/termios)."""
+    claude_cmd = _resolve_claude_command()
+    if not claude_cmd:
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error=_claude_not_found_error(),
+        )
+
     try:
         proc = subprocess.Popen(
-            ["claude"],
+            claude_cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -87,7 +127,7 @@ def _capture_usage_windows(timeout_seconds: float = 12.0) -> UsageSnapshot:
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
-            error="Comando 'claude' não encontrado no PATH.",
+            error=_claude_not_found_error(),
         )
     try:
         output, _ = proc.communicate("/usage\n/exit\n", timeout=timeout_seconds)
@@ -133,11 +173,21 @@ def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
     import pty
     import select
 
+    claude_cmd = _resolve_claude_command()
+    if not claude_cmd:
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error=_claude_not_found_error(),
+        )
+
     master_fd, slave_fd = pty.openpty()
 
     try:
         proc = subprocess.Popen(
-            ["claude"],
+            claude_cmd,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
@@ -152,7 +202,7 @@ def _capture_usage_posix(timeout_seconds: float = 12.0) -> UsageSnapshot:
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
-            error="Comando 'claude' não encontrado no PATH.",
+            error=_claude_not_found_error(),
         )
 
     os.close(slave_fd)

@@ -97,6 +97,9 @@ HOST=0.0.0.0 PORT=9000 python cli.py dashboard
 # Porta da aba de live usage (padrão: 8787)
 LIVE_USAGE_PORT=9090 python cli.py live-usage
 
+# Caminho/comando explícito do Claude CLI (útil quando não está no PATH)
+CLAUDE_BIN="C:\\Users\\seu_usuario\\AppData\\Roaming\\npm\\claude.cmd" python cli.py live-usage
+
 # Varre um diretório de projetos personalizado
 python cli.py scan --projects-dir /caminho/para/transcripts
 ```
