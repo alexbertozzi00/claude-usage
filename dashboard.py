@@ -549,6 +549,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .export-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; }
   .export-btn:hover { color: var(--text); border-color: var(--accent); }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
+  .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
+  .insight-list li { color: var(--text); line-height: 1.5; }
+  .insight-list .hint { color: var(--muted); font-size: 12px; }
 
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; }
@@ -587,6 +591,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <div class="container">
   <div class="stats-row" id="stats-row"></div>
+  <div class="insights-card">
+    <div class="section-title">Actionable Insights</div>
+    <ul id="insights-list" class="insight-list"></ul>
+  </div>
   <div class="charts-grid">
     <div class="chart-card wide">
       <h2 id="daily-chart-title">Daily Token Usage</h2>
@@ -1009,10 +1017,15 @@ function applyFilter() {
     cost:           byModel.reduce((s, m) => s + calcCost(m.model, m.input, m.output, m.cache_read, m.cache_creation), 0),
   };
 
+  const peakDay = daily.length
+    ? daily.reduce((best, row) => ((row.input + row.output) > (best.input + best.output) ? row : best), daily[0])
+    : null;
+
   // Update daily chart title
   document.getElementById('daily-chart-title').textContent = 'Daily Token Usage \u2014 ' + RANGE_LABELS[selectedRange];
 
   renderStats(totals);
+  renderInsights(totals, byModel, byProject, peakDay);
   renderDailyChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
@@ -1042,6 +1055,47 @@ function renderStats(t) {
       ${s.sub ? `<div class="sub">${esc(s.sub)}</div>` : ''}
     </div>
   `).join('');
+}
+
+function renderInsights(totals, byModel, byProject, peakDay) {
+  const container = document.getElementById('insights-list');
+  if (!container) return;
+
+  if (!totals.turns) {
+    container.innerHTML = '<li>No data for the selected filters/range yet.</li>';
+    return;
+  }
+
+  const cacheRatio = totals.input ? (totals.cache_read / totals.input) : 0;
+  const outputRatio = totals.input ? (totals.output / totals.input) : 0;
+  const topModel = byModel.length ? byModel[0] : null;
+  const topProject = byProject.length ? byProject[0] : null;
+
+  const insights = [];
+  insights.push(
+    cacheRatio < 0.15
+      ? `Low cache reuse (${(cacheRatio * 100).toFixed(1)}%): keep system prompts stable to improve cache hits.`
+      : `Good cache reuse (${(cacheRatio * 100).toFixed(1)}%): your workload is benefiting from prompt caching.`
+  );
+
+  insights.push(
+    outputRatio > 1.0
+      ? `High output/input ratio (${outputRatio.toFixed(2)}x): consider shorter default responses for routine tasks.`
+      : `Balanced output/input ratio (${outputRatio.toFixed(2)}x): response verbosity looks under control.`
+  );
+
+  if (topModel) {
+    insights.push(`Primary model in this slice: ${esc(topModel.model)} (${fmt(topModel.input + topModel.output)} tokens).`);
+  }
+  if (topProject) {
+    insights.push(`Top project by token volume: ${esc(topProject.project)} (${fmt(topProject.input + topProject.output)} tokens).`);
+  }
+  if (peakDay && peakDay.day) {
+    insights.push(`Peak day: ${fmtDate(peakDay.day)} (${fmt(peakDay.input + peakDay.output)} input+output tokens).`);
+  }
+
+  container.innerHTML = insights.map(item => `<li>${item}</li>`).join('') +
+    '<li class="hint">Insights update automatically when you change model filters and time range.</li>';
 }
 
 function renderDailyChart(daily) {

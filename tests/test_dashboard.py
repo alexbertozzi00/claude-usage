@@ -244,6 +244,11 @@ class TestHTMLTemplate(unittest.TestCase):
         self.assertIn("session-link", HTML_TEMPLATE)
         self.assertIn("encodeURIComponent(s.session_id_full)", HTML_TEMPLATE)
 
+    def test_template_has_insights_section(self):
+        self.assertIn("Actionable Insights", HTML_TEMPLATE)
+        self.assertIn("id=\"insights-list\"", HTML_TEMPLATE)
+        self.assertIn("function renderInsights(", HTML_TEMPLATE)
+
 
 class TestPricingParity(unittest.TestCase):
     """Verify CLI and dashboard pricing tables stay in sync."""
