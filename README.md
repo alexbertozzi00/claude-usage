@@ -23,6 +23,7 @@ Neste fork, foram adicionadas as seguintes funcionalidades:
 - **Labels traduzidos para PT-BR**
 - **Atualização automática a cada 30 segundos** no dashboard
 - Suporte a **tema claro e escuro**
+- Criação de **paginação na lista de sessões**
 
 ---
 
