@@ -600,13 +600,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
   #theme-toggle-button {
     /* font-size: 17px; */
     position: relative;
-    display: inline-block;
+    display: flex;
+    align-items: center;
     width: 59px;
+    height: 35px;
     cursor: pointer;
   }
+  #theme-toggle-button svg { display: block; }
   #toggle {
     opacity: 0;
     width: 0;
@@ -627,7 +631,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #toggle:checked + svg #cloud { opacity: 0; }
   #stars { opacity: 0; }
   #toggle:checked + svg #stars { opacity: 1; }
-  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; }
+  #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 0; height: 32px; display: inline-flex; align-items: center; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -702,6 +706,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <h1>Claude Code Usage Dashboard</h1>
   <div class="meta" id="meta">Loading...</div>
   <div class="header-controls">
+    <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
       <input type="checkbox" id="toggle">
       <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
@@ -714,6 +719,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </svg>
     </label>
     <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+    </div>
   </div>
 </header>
 
