@@ -1032,6 +1032,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <thead><tr>
         <th>Sessão</th>
         <th>Projeto</th>
+        <th>Nome sessão</th>
         <th class="sortable" onclick="setSessionSort('last')">Última Atividade <span class="sort-icon" id="sort-icon-last"></span></th>
         <th class="sortable" onclick="setSessionSort('duration_min')">Duração <span class="sort-icon" id="sort-icon-duration_min"></span></th>
         <th>Modelo</th>
@@ -1629,12 +1630,13 @@ function renderSessionsTable(sessions) {
     const costCell = isBillable(s.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
       : `<td class="cost-na">não se aplica</td>`;
-    const displayName = s.custom_name || s.project;
+    const sessionName = s.custom_name || '';
     const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
     const isSaving = renamingSessions.has(s.session_id_full);
     return `<tr>
       <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}">${esc(s.session_id)}&hellip;</a></td>
-      <td>${esc(displayName)}</td>
+      <td>${esc(s.project)}</td>
+      <td>${esc(sessionName)}</td>
       <td class="muted">${esc(s.last)}</td>
       <td class="muted">${esc(s.duration_min)}m</td>
       <td><span class="model-tag">${esc(s.model)}</span></td>
@@ -1807,10 +1809,10 @@ function downloadCSV(reportType, header, rows) {
 }
 
 function exportSessionsCSV() {
-  const header = ['Sessão', 'Projeto', 'Última atividade', 'Duração (min)', 'Modelo', 'Interações', 'Entrada', 'Saída', 'Leitura de cache', 'Criação de cache', 'Custo estimado'];
+  const header = ['Sessão', 'Projeto', 'Nome sessão', 'Última atividade', 'Duração (min)', 'Modelo', 'Interações', 'Entrada', 'Saída', 'Leitura de cache', 'Criação de cache', 'Custo estimado'];
   const rows = lastFilteredSessions.map(s => {
     const cost = calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation);
-    return [s.session_id, s.project, s.last, s.duration_min, s.model, s.turns, s.input, s.output, s.cache_read, s.cache_creation, cost.toFixed(4)];
+    return [s.session_id, s.project, s.custom_name || '', s.last, s.duration_min, s.model, s.turns, s.input, s.output, s.cache_read, s.cache_creation, cost.toFixed(4)];
   });
   downloadCSV('sessoes', header, rows);
 }
