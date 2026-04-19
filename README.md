@@ -22,6 +22,7 @@ Captures usage from:
 
 **Not captured:**
 - **Cowork sessions** — these run server-side and do not write local JSONL transcripts
+- **Claude Web and desktop app sessions** — not available yet in local Claude Code transcripts
 
 ---
 
