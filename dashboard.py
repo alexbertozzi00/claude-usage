@@ -923,6 +923,24 @@ let projectSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
+const AUTO_REFRESH_INTERVAL_MS = 30000;
+const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
+let autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
+let latestGeneratedAt = null;
+
+function updateMetaStatus() {
+  const meta = document.getElementById('meta');
+  if (!meta) return;
+  const generatedLabel = latestGeneratedAt ? ('Atualizado em: ' + latestGeneratedAt) : 'Atualizado em: -';
+  meta.textContent = generatedLabel + ' \u00b7 Atualização automática em ' + autoRefreshCountdown + 's';
+}
+
+function startAutoRefreshCountdown() {
+  setInterval(() => {
+    if (autoRefreshCountdown > 0) autoRefreshCountdown -= 1;
+    updateMetaStatus();
+  }, 1000);
+}
 
 // ── Pricing (Anthropic API, April 2026) ────────────────────────────────────
 const PRICING = {
@@ -1579,7 +1597,9 @@ async function loadData() {
       document.body.innerHTML = '<div style="padding:40px;color:#f87171">' + esc(d.error) + '</div>';
       return;
     }
-    document.getElementById('meta').textContent = 'Atualizado em: ' + d.generated_at + ' \u00b7 Atualização automática em 30s';
+    latestGeneratedAt = d.generated_at;
+    autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
+    updateMetaStatus();
 
     const isFirstLoad = rawData === null;
     rawData = d;
@@ -1606,8 +1626,10 @@ async function loadData() {
 applyTheme(getInitialTheme());
 document.addEventListener('DOMContentLoaded', () => {
   initThemeToggle();
+  startAutoRefreshCountdown();
+  updateMetaStatus();
   loadData();
-  setInterval(loadData, 30000);
+  setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
 });
 </script>
 </body>
