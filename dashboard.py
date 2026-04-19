@@ -364,7 +364,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>Claude Code Usage Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  :root {
+  :root[data-theme="dark"] {
     --bg: #0f1117;
     --card: #1a1d27;
     --border: #2a2d3a;
@@ -373,13 +373,38 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --accent: #d97757;
     --blue: #4f8ef7;
     --green: #4ade80;
+    --hover-bg: rgba(255, 255, 255, 0.04);
+    --active-bg: rgba(217, 119, 87, 0.18);
+    --tag-bg: rgba(79, 142, 247, 0.20);
+    --table-hover-bg: rgba(255, 255, 255, 0.03);
+    --chart-grid: #2a2d3a;
+    --chart-text: #8892a4;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8fc;
+    --card: #ffffff;
+    --border: #d7dfeb;
+    --text: #1f2937;
+    --muted: #516073;
+    --accent: #c2410c;
+    --blue: #1d4ed8;
+    --green: #15803d;
+    --hover-bg: rgba(15, 23, 42, 0.05);
+    --active-bg: rgba(194, 65, 12, 0.15);
+    --tag-bg: rgba(29, 78, 216, 0.12);
+    --table-hover-bg: rgba(15, 23, 42, 0.04);
+    --chart-grid: #d7dfeb;
+    --chart-text: #516073;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
+  .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .icon-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; line-height: 1.3; }
+  .icon-btn:hover { color: var(--text); border-color: var(--accent); background: var(--hover-bg); }
   #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 4px; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -390,15 +415,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #model-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
   .model-cb-label { display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; font-size: 12px; color: var(--muted); transition: border-color 0.15s, color 0.15s, background 0.15s; user-select: none; }
   .model-cb-label:hover { border-color: var(--accent); color: var(--text); }
-  .model-cb-label.checked { background: rgba(217,119,87,0.12); border-color: var(--accent); color: var(--text); }
+  .model-cb-label.checked { background: var(--active-bg); border-color: var(--accent); color: var(--text); }
   .model-cb-label input { display: none; }
   .filter-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
   .filter-btn:hover { border-color: var(--accent); color: var(--text); }
   .range-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
   .range-btn { padding: 4px 13px; background: transparent; border: none; border-right: 1px solid var(--border); color: var(--muted); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
   .range-btn:last-child { border-right: none; }
-  .range-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
-  .range-btn.active { background: rgba(217,119,87,0.15); color: var(--accent); font-weight: 600; }
+  .range-btn:hover { background: var(--hover-bg); color: var(--text); }
+  .range-btn.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -421,8 +446,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .sort-icon { font-size: 9px; opacity: 0.8; }
   td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
-  .model-tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; background: rgba(79,142,247,0.15); color: var(--blue); }
+  tr:hover td { background: var(--table-hover-bg); }
+  .model-tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; background: var(--tag-bg); color: var(--blue); }
   .cost { color: var(--green); font-family: monospace; }
   .cost-na { color: var(--muted); font-family: monospace; font-size: 11px; }
   .num { font-family: monospace; }
@@ -450,7 +475,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <header>
   <h1>Claude Code Usage Dashboard</h1>
   <div class="meta" id="meta">Loading...</div>
-  <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+  <div class="header-controls">
+    <button id="theme-toggle" class="icon-btn" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">🌓 Tema</button>
+    <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+  </div>
 </header>
 
 <div id="filter-bar">
@@ -623,6 +651,7 @@ function fmtDate(isoDay) {
 }
 function fmtCost(c)    { return '$' + c.toFixed(4); }
 function fmtCostBig(c) { return '$' + c.toFixed(2); }
+function cssVar(name)  { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
 // ── Chart colors ───────────────────────────────────────────────────────────
 const TOKEN_COLORS = {
@@ -648,6 +677,39 @@ function getRangeCutoff(range) {
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
   return ['7d', '30d', '90d', 'all'].includes(p) ? p : '30d';
+}
+
+function readURLTheme() {
+  const p = new URLSearchParams(window.location.search).get('theme');
+  return ['light', 'dark'].includes(p) ? p : null;
+}
+
+function getInitialTheme() {
+  const fromURL = readURLTheme();
+  if (fromURL) return fromURL;
+  const saved = localStorage.getItem('dashboard-theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyTheme(theme) {
+  const resolved = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = resolved;
+  return resolved;
+}
+
+function toggleTheme() {
+  const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('dashboard-theme', next);
+  if (rawData) applyFilter();
+}
+
+function initThemeToggle() {
+  const btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', toggleTheme);
 }
 
 function setRange(range) {
@@ -863,7 +925,7 @@ function renderStats(t) {
     { label: 'Output Tokens',  value: fmt(t.output),               sub: rangeLabel },
     { label: 'Cache Read',     value: fmt(t.cache_read),           sub: 'from prompt cache' },
     { label: 'Cache Creation', value: fmt(t.cache_creation),       sub: 'writes to prompt cache' },
-    { label: 'Est. Cost',      value: fmtCostBig(t.cost),          sub: 'API pricing, Apr 2026', color: '#4ade80' },
+    { label: 'Est. Cost',      value: fmtCostBig(t.cost),          sub: 'API pricing, Apr 2026', color: cssVar('--green') },
   ];
   document.getElementById('stats-row').innerHTML = stats.map(s => `
     <div class="stat-card">
@@ -890,10 +952,10 @@ function renderDailyChart(daily) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12 } } },
+      plugins: { legend: { labels: { color: cssVar('--chart-text'), boxWidth: 12 } } },
       scales: {
-        x: { ticks: { color: '#8892a4', maxTicksLimit: RANGE_TICKS[selectedRange] }, grid: { color: '#2a2d3a' } },
-        y: { ticks: { color: '#8892a4', callback: v => fmt(v) }, grid: { color: '#2a2d3a' } },
+        x: { ticks: { color: cssVar('--chart-text'), maxTicksLimit: RANGE_TICKS[selectedRange] }, grid: { color: cssVar('--chart-grid') } },
+        y: { ticks: { color: cssVar('--chart-text'), callback: v => fmt(v) }, grid: { color: cssVar('--chart-grid') } },
       }
     }
   });
@@ -907,12 +969,12 @@ function renderModelChart(byModel) {
     type: 'doughnut',
     data: {
       labels: byModel.map(m => m.model),
-      datasets: [{ data: byModel.map(m => m.input + m.output), backgroundColor: MODEL_COLORS, borderWidth: 2, borderColor: '#1a1d27' }]
+      datasets: [{ data: byModel.map(m => m.input + m.output), backgroundColor: MODEL_COLORS, borderWidth: 2, borderColor: cssVar('--card') }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#8892a4', boxWidth: 12, font: { size: 11 } } },
+        legend: { position: 'bottom', labels: { color: cssVar('--chart-text'), boxWidth: 12, font: { size: 11 } } },
         tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} tokens` } }
       }
     }
@@ -935,10 +997,10 @@ function renderProjectChart(byProject) {
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12 } } },
+      plugins: { legend: { labels: { color: cssVar('--chart-text'), boxWidth: 12 } } },
       scales: {
-        x: { ticks: { color: '#8892a4', callback: v => fmt(v) }, grid: { color: '#2a2d3a' } },
-        y: { ticks: { color: '#8892a4', font: { size: 11 } }, grid: { color: '#2a2d3a' } },
+        x: { ticks: { color: cssVar('--chart-text'), callback: v => fmt(v) }, grid: { color: cssVar('--chart-grid') } },
+        y: { ticks: { color: cssVar('--chart-text'), font: { size: 11 } }, grid: { color: cssVar('--chart-grid') } },
       }
     }
   });
@@ -1152,8 +1214,12 @@ async function loadData() {
   }
 }
 
-loadData();
-setInterval(loadData, 30000);
+applyTheme(getInitialTheme());
+document.addEventListener('DOMContentLoaded', () => {
+  initThemeToggle();
+  loadData();
+  setInterval(loadData, 30000);
+});
 </script>
 </body>
 </html>
