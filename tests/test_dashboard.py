@@ -224,6 +224,15 @@ class TestDashboardHTTP(unittest.TestCase):
         self.assertIn('id="sessions-pager"', HTML_TEMPLATE)
         self.assertIn("setSessionsPage", HTML_TEMPLATE)
 
+    def test_template_mentions_auto_refresh_toggle(self):
+        self.assertIn('id="refresh-toggle-input"', HTML_TEMPLATE)
+        self.assertIn("onAutoRefreshToggle", HTML_TEMPLATE)
+        self.assertIn("ccu:autoRefreshPaused", HTML_TEMPLATE)
+
+    def test_template_mentions_auto_refresh_paused_status(self):
+        self.assertIn("Atualização automática: pausada", HTML_TEMPLATE)
+        self.assertIn("Atualização automática: ativa", HTML_TEMPLATE)
+
     def test_404_for_unknown_path(self):
         url = f"http://127.0.0.1:{self.port}/nonexistent"
         try:

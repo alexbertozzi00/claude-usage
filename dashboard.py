@@ -815,6 +815,35 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .meta { color: var(--muted); font-size: 12px; }
   .header-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .header-actions { display: flex; align-items: center; gap: 8px; }
+  .refresh-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    background: var(--card);
+    cursor: pointer;
+  }
+  .refresh-toggle:hover { border-color: var(--accent); color: var(--text); }
+  .refresh-toggle__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .refresh-toggle__icon {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+  }
+  .refresh-toggle__icon--play { display: none; }
+  .refresh-toggle__input:not(:checked) ~ .refresh-toggle__icon--play { display: block; }
+  .refresh-toggle__input:not(:checked) ~ .refresh-toggle__icon--pause { display: none; }
   #theme-toggle-button {
     /* font-size: 17px; */
     position: relative;
@@ -1000,6 +1029,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         </g>
       </svg>
     </label>
+    <label
+      class="refresh-toggle"
+      id="refresh-toggle"
+      title="Pausar atualização automática"
+      aria-label="Pausar atualização automática"
+    >
+      <input
+        type="checkbox"
+        id="refresh-toggle-input"
+        class="refresh-toggle__input"
+        checked
+        onchange="onAutoRefreshToggle()"
+      >
+      <svg class="refresh-toggle__icon refresh-toggle__icon--pause" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 4h4v16H6zM14 4h4v16h-4z"></path>
+      </svg>
+      <svg class="refresh-toggle__icon refresh-toggle__icon--play" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 5v14l11-7z"></path>
+      </svg>
+    </label>
     <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos.">&#x21bb; Reescanear</button>
   </div>
 </header>
@@ -1153,22 +1202,82 @@ const SESSIONS_PAGE_SIZE = 20;
 const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
+const AUTO_REFRESH_STORAGE_KEY = 'ccu:autoRefreshPaused';
 const MAX_CUSTOM_NAME_LENGTH = 80;
 let autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
 let latestGeneratedAt = null;
+let isAutoRefreshPaused = false;
 
 function updateMetaStatus() {
   const meta = document.getElementById('meta');
   if (!meta) return;
   const generatedLabel = latestGeneratedAt ? ('Atualizado em: ' + latestGeneratedAt) : 'Atualizado em: -';
-  meta.textContent = generatedLabel + ' \u00b7 Atualização automática em ' + autoRefreshCountdown + 's';
+  const refreshLabel = isAutoRefreshPaused
+    ? 'Atualização automática: pausada'
+    : ('Atualização automática: ativa (em ' + autoRefreshCountdown + 's)');
+  meta.textContent = generatedLabel + ' \u00b7 ' + refreshLabel;
+}
+
+function updateAutoRefreshToggleUI() {
+  const toggleInput = document.getElementById('refresh-toggle-input');
+  const toggleLabel = document.getElementById('refresh-toggle');
+  if (toggleInput) {
+    toggleInput.checked = !isAutoRefreshPaused;
+  }
+  if (toggleLabel) {
+    const actionLabel = isAutoRefreshPaused ? 'Retomar atualização automática' : 'Pausar atualização automática';
+    toggleLabel.title = actionLabel;
+    toggleLabel.setAttribute('aria-label', actionLabel);
+  }
+}
+
+function persistAutoRefreshState() {
+  try {
+    localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, isAutoRefreshPaused ? 'true' : 'false');
+  } catch (e) {
+    console.warn('Falha ao salvar preferência de atualização automática.', e);
+  }
+}
+
+function restoreAutoRefreshState() {
+  try {
+    const stored = localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+    isAutoRefreshPaused = stored === 'true';
+  } catch (e) {
+    isAutoRefreshPaused = false;
+  }
+  updateAutoRefreshToggleUI();
+  updateMetaStatus();
+}
+
+function onAutoRefreshToggle() {
+  const toggleInput = document.getElementById('refresh-toggle-input');
+  if (!toggleInput) return;
+  isAutoRefreshPaused = !toggleInput.checked;
+  if (!isAutoRefreshPaused) {
+    autoRefreshCountdown = AUTO_REFRESH_INTERVAL_SECONDS;
+  }
+  persistAutoRefreshState();
+  updateAutoRefreshToggleUI();
+  updateMetaStatus();
 }
 
 function startAutoRefreshCountdown() {
   setInterval(() => {
+    if (isAutoRefreshPaused) {
+      updateMetaStatus();
+      return;
+    }
     if (autoRefreshCountdown > 0) autoRefreshCountdown -= 1;
     updateMetaStatus();
   }, 1000);
+}
+
+function startAutoRefreshPolling() {
+  setInterval(() => {
+    if (isAutoRefreshPaused) return;
+    loadData();
+  }, AUTO_REFRESH_INTERVAL_MS);
 }
 
 // ── Pricing (Anthropic API, April 2026) ────────────────────────────────────
@@ -2048,10 +2157,11 @@ async function loadData() {
 applyTheme(getInitialTheme());
 document.addEventListener('DOMContentLoaded', () => {
   initThemeToggle();
+  restoreAutoRefreshState();
   startAutoRefreshCountdown();
+  startAutoRefreshPolling();
   updateMetaStatus();
   loadData();
-  setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
 });
 </script>
 </body>
