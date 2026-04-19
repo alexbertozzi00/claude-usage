@@ -29,6 +29,12 @@ class TestProjectNameFromCwd(unittest.TestCase):
     def test_trailing_slash(self):
         self.assertEqual(project_name_from_cwd("/home/user/project/"), "user/project")
 
+    def test_omits_documentos_prefix(self):
+        self.assertEqual(
+            project_name_from_cwd("/Users/alice/Documentos/meu-projeto"),
+            "meu-projeto",
+        )
+
     def test_empty_string(self):
         self.assertEqual(project_name_from_cwd(""), "unknown")
 
