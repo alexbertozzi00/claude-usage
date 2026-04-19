@@ -176,6 +176,38 @@ def _parse_usage_percent(value):
         return None
 
 
+def _parse_usage_tokens(value):
+    if value is None:
+        return None
+    try:
+        cleaned = str(value).strip().lower()
+        cleaned = cleaned.replace("tokens", "").replace("token", "")
+        cleaned = cleaned.replace(",", "").replace("_", "").strip()
+        if cleaned == "":
+            return None
+        return int(float(cleaned))
+    except Exception:
+        return None
+
+
+def _extract_usage_block(payload, key):
+    block = payload.get(key, {}) or {}
+    return {
+        "used_percent": _parse_usage_percent(block.get("used_percent")),
+        "available_percent": _parse_usage_percent(block.get("available_percent")),
+        "used_tokens": _parse_usage_tokens(
+            block.get("used_tokens", block.get("used_token_count"))
+        ),
+        "available_tokens": _parse_usage_tokens(
+            block.get("available_tokens", block.get("remaining_tokens"))
+        ),
+        "limit_tokens": _parse_usage_tokens(
+            block.get("limit_tokens", block.get("token_limit"))
+        ),
+        "resets_at": str(block.get("resets_at") or ""),
+    }
+
+
 def _parse_usage_text(stdout):
     text = (stdout or "").strip()
     session_used = session_avail = week_used = week_avail = None
@@ -209,11 +241,17 @@ def _parse_usage_text(stdout):
         "current_session": {
             "used_percent": session_used,
             "available_percent": session_avail,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": session_resets,
         },
         "current_week": {
             "used_percent": week_used,
             "available_percent": week_avail,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": week_resets,
         },
     }
@@ -251,16 +289,8 @@ def get_usage_snapshot(timeout_seconds=8):
                     return {
                         "ok": True,
                         "captured_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "current_session": {
-                            "used_percent": _parse_usage_percent(payload.get("current_session", {}).get("used_percent")),
-                            "available_percent": _parse_usage_percent(payload.get("current_session", {}).get("available_percent")),
-                            "resets_at": str(payload.get("current_session", {}).get("resets_at") or ""),
-                        },
-                        "current_week": {
-                            "used_percent": _parse_usage_percent(payload.get("current_week", {}).get("used_percent")),
-                            "available_percent": _parse_usage_percent(payload.get("current_week", {}).get("available_percent")),
-                            "resets_at": str(payload.get("current_week", {}).get("resets_at") or ""),
-                        },
+                        "current_session": _extract_usage_block(payload, "current_session"),
+                        "current_week": _extract_usage_block(payload, "current_week"),
                         "raw_excerpt": stdout[:2000],
                         "error": "",
                     }
@@ -290,11 +320,17 @@ def get_usage_snapshot(timeout_seconds=8):
         "current_session": {
             "used_percent": None,
             "available_percent": None,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": "",
         },
         "current_week": {
             "used_percent": None,
             "available_percent": None,
+            "used_tokens": None,
+            "available_tokens": None,
+            "limit_tokens": None,
             "resets_at": "",
         },
         "raw_excerpt": last_excerpt[:2000],
@@ -1401,6 +1437,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hourly-track { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
   .hourly-fill { height: 100%; background: linear-gradient(90deg, #4f8ef7, #4ade80); }
   .insights-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .usage-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .usage-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .usage-box { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: transparent; }
+  .usage-box h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
+  .usage-line { font-size: 13px; margin-bottom: 4px; color: var(--text); }
+  .usage-line .muted { font-size: 12px; }
+  .usage-error { color: #f87171; font-size: 12px; margin-top: 8px; }
+  .usage-hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
@@ -1488,6 +1532,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
+  <div class="usage-panel">
+    <div class="section-title">Uso da Cota Claude (/usage)</div>
+    <div id="usage-panel-content" class="usage-panel-grid"></div>
+    <div class="usage-hint">Painel adicional com dados de <code>claude /usage --json</code> (quando disponível no ambiente).</div>
+  </div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
@@ -1743,6 +1792,7 @@ function calcCost(model, inp, out, cacheRead, cacheCreation) {
 
 // ── Formatting ─────────────────────────────────────────────────────────────
 function fmt(n) {
+  if (n === null || n === undefined) return '-';
   if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
   if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
   if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
@@ -1757,6 +1807,49 @@ function fmtDate(isoDay) {
 function fmtCost(c)    { return '$' + c.toFixed(4); }
 function fmtCostBig(c) { return '$' + c.toFixed(2); }
 function cssVar(name)  { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function fmtPct(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
+  return Number(n).toFixed(1) + '%';
+}
+
+function renderUsageBlock(title, block) {
+  const usedTokens = block?.used_tokens;
+  const availableTokens = block?.available_tokens;
+  const limitTokens = block?.limit_tokens;
+  const resetsAt = block?.resets_at || '-';
+  return `
+    <div class="usage-box">
+      <h3>${esc(title)}</h3>
+      <div class="usage-line"><strong>Gasto:</strong> ${fmtPct(block?.used_percent)} <span class="muted">(${fmt(usedTokens)} tokens)</span></div>
+      <div class="usage-line"><strong>Restante:</strong> ${fmtPct(block?.available_percent)} <span class="muted">(${fmt(availableTokens)} tokens)</span></div>
+      <div class="usage-line"><strong>Limite:</strong> ${fmt(limitTokens)} tokens</div>
+      <div class="usage-line"><strong>Reset:</strong> ${esc(String(resetsAt))}</div>
+    </div>
+  `;
+}
+
+function renderUsagePanel(snapshot) {
+  const el = document.getElementById('usage-panel-content');
+  if (!el) return;
+  if (!snapshot || !snapshot.ok) {
+    const err = snapshot?.error ? esc(String(snapshot.error)) : 'Não foi possível obter o snapshot de uso agora.';
+    el.innerHTML = `<div class="usage-error">${err}</div>`;
+    return;
+  }
+  el.innerHTML =
+    renderUsageBlock('Sessão atual', snapshot.current_session || {}) +
+    renderUsageBlock('Semana atual', snapshot.current_week || {});
+}
+
+async function loadUsageSnapshot() {
+  try {
+    const resp = await fetch('/api/usage');
+    const usage = await resp.json();
+    renderUsagePanel(usage);
+  } catch (e) {
+    renderUsagePanel({ ok: false, error: 'Falha ao carregar /api/usage.' });
+  }
+}
 
 // ── Chart colors ───────────────────────────────────────────────────────────
 const TOKEN_COLORS = {
@@ -2651,6 +2744,7 @@ async function loadData() {
     }
 
     applyFilter();
+    await loadUsageSnapshot();
   } catch(e) {
     console.error(e);
   }
