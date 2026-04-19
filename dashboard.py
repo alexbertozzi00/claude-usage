@@ -956,6 +956,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="chart-card">
+      <h2><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span></h2>
+      <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+    </div>
+    <div class="chart-card">
       <h2>Por Modelo</h2>
       <div class="chart-wrap"><canvas id="chart-model"></canvas></div>
     </div>
@@ -1433,6 +1437,7 @@ function applyFilter() {
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay);
   renderDailyChart(daily);
+  renderTrendChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
   lastFilteredSessions = sortSessions(filteredSessions);
@@ -1524,6 +1529,77 @@ function renderDailyChart(daily) {
       scales: {
         x: { ticks: { color: cssVar('--chart-text'), maxTicksLimit: RANGE_TICKS[selectedRange] }, grid: { color: cssVar('--chart-grid') } },
         y: { ticks: { color: cssVar('--chart-text'), callback: v => fmt(v) }, grid: { color: cssVar('--chart-grid') } },
+      }
+    }
+  });
+}
+
+function movingAverage(values, windowSize) {
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const start = Math.max(0, i - windowSize + 1);
+    const slice = values.slice(start, i + 1);
+    const avg = slice.reduce((sum, v) => sum + v, 0) / (slice.length || 1);
+    out.push(avg);
+  }
+  return out;
+}
+
+function renderTrendChart(daily) {
+  const canvas = document.getElementById('chart-trend');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (charts.trend) charts.trend.destroy();
+
+  const labels = daily.map(d => fmtDate(d.day));
+  const totalIO = daily.map(d => (d.input || 0) + (d.output || 0));
+  const avg7d = movingAverage(totalIO, 7);
+
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Tokens (entrada + saída)',
+          data: totalIO,
+          borderColor: 'rgba(79,142,247,1)',
+          backgroundColor: 'rgba(79,142,247,0.2)',
+          tension: 0.25,
+          fill: true,
+          pointRadius: 2,
+        },
+        {
+          label: 'Média móvel 7d',
+          data: avg7d,
+          borderColor: 'rgba(217,119,87,1)',
+          borderDash: [6, 4],
+          tension: 0.25,
+          fill: false,
+          pointRadius: 0,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: cssVar('--chart-text'), boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw || 0)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: cssVar('--chart-text'), maxTicksLimit: RANGE_TICKS[selectedRange] },
+          grid: { color: cssVar('--chart-grid') }
+        },
+        y: {
+          ticks: { color: cssVar('--chart-text'), callback: v => fmt(v) },
+          grid: { color: cssVar('--chart-grid') }
+        },
       }
     }
   });
