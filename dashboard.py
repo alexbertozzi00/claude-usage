@@ -1008,7 +1008,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <h2 id="daily-chart-title">Uso Diário de Tokens</h2>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card wide">
       <h2><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span></h2>
       <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
     </div>
