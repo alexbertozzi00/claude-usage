@@ -1157,13 +1157,26 @@ const RANGE_LABELS = {
 };
 const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
+function getLatestDataDay() {
+  if (!rawData) return null;
+  const fromSessions = (rawData.sessions_all || []).map(s => s.last_date).filter(Boolean);
+  const fromDaily = (rawData.daily_by_model || []).map(r => r.day).filter(Boolean);
+  const allDays = fromSessions.concat(fromDaily);
+  if (!allDays.length) return null;
+  return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
+}
+
 function getRangeCutoff(range) {
   if (range === 'all') return null;
   const daysByRange = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+
+  // Use the latest day present in payload as reference. This avoids empty
+  // dashboards when the client clock/timezone is skewed relative to data.
+  const latestDataDay = getLatestDataDay();
+  const base = latestDataDay ? new Date(latestDataDay + 'T00:00:00Z') : new Date();
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
 }
 
 function readURLRange() {
