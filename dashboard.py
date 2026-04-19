@@ -1642,6 +1642,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </tr></thead>
       <tbody id="project-cost-body"></tbody>
     </table>
+    <div id="project-cost-summary" class="table-footer"></div>
   </div>
   <div class="table-card">
     <div class="section-title">Ranking de Eficiência por Sessão</div>
