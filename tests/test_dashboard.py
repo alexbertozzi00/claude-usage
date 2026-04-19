@@ -103,6 +103,18 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertEqual(len(data["sessions"]), 1)
         self.assertEqual(data["sessions"][0]["session_id_full"], "sess-abc123")
 
+    def test_get_sessions_for_hour_with_timestamp_cutoff(self):
+        data = get_sessions_for_hour(
+            "09",
+            cutoff_ts="2026-04-08T09:15:00Z",
+            models=["claude-sonnet-4-6"],
+            db_path=self.db_path,
+        )
+        self.assertNotIn("error", data)
+        self.assertEqual(data["hour"], "09")
+        self.assertEqual(data["cutoff_ts"], "2026-04-08T09:15:00Z")
+        self.assertEqual(len(data["sessions"]), 1)
+
     def test_hourly_ignores_tool_marker_turns(self):
         conn = get_db(self.db_path)
         upsert_sessions(conn, [{

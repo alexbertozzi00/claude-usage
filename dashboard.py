@@ -353,6 +353,8 @@ def get_dashboard_data(db_path=DB_PATH):
             COALESCE(model, 'unknown') as model,
             SUM(input_tokens)          as input,
             SUM(output_tokens)         as output,
+            SUM(cache_read_tokens)     as cache_read,
+            SUM(cache_creation_tokens) as cache_creation,
             COUNT(*)                   as turns
         FROM turns
         WHERE COALESCE(has_tool_marker, 0) = 0
@@ -366,6 +368,8 @@ def get_dashboard_data(db_path=DB_PATH):
         "model":  r["model"],
         "input":  r["input"] or 0,
         "output": r["output"] or 0,
+        "cache_read": r["cache_read"] or 0,
+        "cache_creation": r["cache_creation"] or 0,
         "turns":  r["turns"] or 0,
     } for r in hourly_rows]
 
@@ -394,6 +398,7 @@ def get_dashboard_data(db_path=DB_PATH):
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
+            "last_iso":      r["last_timestamp"] or "",
             "duration_min":  duration_min,
             "model":         r["model"] or "unknown",
             "turns":         r["turn_count"] or 0,
@@ -414,7 +419,7 @@ def get_dashboard_data(db_path=DB_PATH):
     }
 
 
-def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
+def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado."}
     if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
@@ -430,6 +435,9 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
         if cutoff:
             where.append("substr(t.timestamp, 1, 10) >= ?")
             params.append(cutoff)
+        if cutoff_ts:
+            where.append("t.timestamp >= ?")
+            params.append(cutoff_ts)
         if model_filter:
             where.append("COALESCE(t.model, 'unknown') IN (" + ",".join("?" for _ in model_filter) + ")")
             params.extend(model_filter)
@@ -466,6 +474,7 @@ def get_sessions_for_hour(hour, cutoff=None, models=None, db_path=DB_PATH):
         return {
             "hour": hour,
             "cutoff": cutoff or "",
+            "cutoff_ts": cutoff_ts or "",
             "models": model_filter,
             "sessions": sessions,
             "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -1036,6 +1045,9 @@ def render_hour_sessions_html(data):
 
     hour = escape(f"{data.get('hour', '00')}:00")
     cutoff = escape(data.get("cutoff") or "início")
+    cutoff_ts = (data.get("cutoff_ts") or "").strip()
+    if cutoff_ts:
+        cutoff = escape(_format_timestamp(cutoff_ts))
     models = data.get("models") or []
     models_text = ", ".join(escape(m) for m in models) if models else "todos"
     header_html = render_app_header(
@@ -1477,6 +1489,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-label">Período</div>
   <div class="range-group">
     <button class="range-btn" data-range="1d"  onclick="setRange('1d')">1d</button>
+    <button class="range-btn" data-range="24h" onclick="setRange('24h')">24h</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -1769,14 +1782,15 @@ const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6
 
 // ── Time range ─────────────────────────────────────────────────────────────
 const RANGE_LABELS = {
-  '1d': 'Último dia',
+  '1d': 'Hoje',
+  '24h': 'Últimas 24 horas',
   '7d': 'Últimos 7 dias',
   '30d': 'Últimos 30 dias',
   '90d': 'Últimos 90 dias',
   '180d': 'Últimos 6 meses',
   'all': 'Período completo',
 };
-const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
+const RANGE_TICKS  = { '1d': 6, '24h': 8, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
 
 function getLatestDataDay() {
   if (!rawData) return null;
@@ -1785,6 +1799,25 @@ function getLatestDataDay() {
   const allDays = fromSessions.concat(fromDaily);
   if (!allDays.length) return null;
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
+}
+
+function getLatestDataTimestamp() {
+  if (!rawData) return null;
+
+  const fromSessions = (rawData.sessions_all || [])
+    .map(s => s.last_iso)
+    .filter(Boolean)
+    .map(ts => ts.replace("Z", "+00:00"));
+  const fromHourly = (rawData.hourly_by_model || [])
+    .map(r => (r.day && r.hour ? `${r.day}T${r.hour}:00:00+00:00` : null))
+    .filter(Boolean);
+
+  const allTs = fromSessions.concat(fromHourly)
+    .map(ts => new Date(ts))
+    .filter(dt => !Number.isNaN(dt.getTime()));
+  if (!allTs.length) return null;
+
+  return allTs.reduce((max, dt) => (dt > max ? dt : max), allTs[0]);
 }
 
 function getRangeDayCount(cutoff) {
@@ -1809,20 +1842,34 @@ function getRangeDayCount(cutoff) {
 
 function getRangeCutoff(range) {
   if (range === 'all') return null;
-  const daysByRange = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
+
+  // For 1d we want only the current data day (exclusive "today" view),
+  // not a rolling 24h window.
+  if (range === '1d') return getLatestDataDay();
+  if (range === '24h') return null;
+
+  const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
 
   // Use the latest day present in payload as reference. This avoids empty
   // dashboards when the client clock/timezone is skewed relative to data.
   const latestDataDay = getLatestDataDay();
   const base = latestDataDay ? new Date(latestDataDay + 'T00:00:00Z') : new Date();
-  base.setUTCDate(base.getUTCDate() - days);
+  base.setUTCDate(base.getUTCDate() - days + 1);
   return base.toISOString().slice(0, 10);
+}
+
+function getRangeTimestampCutoff(range) {
+  if (range !== '24h') return null;
+  const latestTs = getLatestDataTimestamp();
+  if (!latestTs) return null;
+  const cutoff = new Date(latestTs.getTime() - 24 * 60 * 60 * 1000);
+  return cutoff.toISOString();
 }
 
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
-  return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
+  return ['1d', '24h', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
 function readURLTheme() {
@@ -2043,14 +2090,47 @@ function applyFilter() {
   if (!rawData) return;
 
   const cutoff = getRangeCutoff(selectedRange);
+  const cutoffTs = getRangeTimestampCutoff(selectedRange);
 
-  // Filter daily rows by model + date range
-  const filteredDaily = rawData.daily_by_model.filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
-  );
-  const filteredHourly = (rawData.hourly_by_model || []).filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
-  );
+  const is24h = selectedRange === '24h';
+  const cutoffTsMs = cutoffTs ? Date.parse(cutoffTs) : null;
+  const filteredHourly = (rawData.hourly_by_model || []).filter(r => {
+    if (!selectedModels.has(r.model)) return false;
+    if (is24h) {
+      const rowTs = Date.parse(`${r.day}T${r.hour}:00:00Z`);
+      return Number.isFinite(rowTs) && rowTs >= cutoffTsMs;
+    }
+    return !cutoff || r.day >= cutoff;
+  });
+
+  // Filter daily rows by model + date range (24h is aggregated from hourly)
+  const filteredDaily = is24h
+    ? (() => {
+      const byDayModel = {};
+      for (const r of filteredHourly) {
+        const key = `${r.day}__${r.model}`;
+        if (!byDayModel[key]) {
+          byDayModel[key] = {
+            day: r.day,
+            model: r.model,
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+            turns: 0,
+          };
+        }
+        byDayModel[key].input += r.input || 0;
+        byDayModel[key].output += r.output || 0;
+        byDayModel[key].cache_read += r.cache_read || 0;
+        byDayModel[key].cache_creation += r.cache_creation || 0;
+        byDayModel[key].turns += r.turns || 0;
+      }
+      return Object.values(byDayModel);
+    })()
+    : rawData.daily_by_model.filter(r =>
+      selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+    );
 
   // Daily chart: aggregate by day
   const dailyMap = {};
@@ -2077,9 +2157,14 @@ function applyFilter() {
   }
 
   // Filter sessions by model + date range
-  const filteredSessions = rawData.sessions_all.filter(s =>
-    selectedModels.has(s.model) && (!cutoff || s.last_date >= cutoff)
-  );
+  const filteredSessions = rawData.sessions_all.filter(s => {
+    if (!selectedModels.has(s.model)) return false;
+    if (is24h) {
+      const sessionTs = Date.parse((s.last_iso || '').replace("Z", "+00:00"));
+      return Number.isFinite(sessionTs) && sessionTs >= cutoffTsMs;
+    }
+    return !cutoff || s.last_date >= cutoff;
+  });
 
   // Add session counts into modelMap
   for (const s of filteredSessions) {
@@ -2131,7 +2216,7 @@ function applyFilter() {
   renderTrendChart(daily);
   renderModelChart(byModel);
   renderProjectChart(byProject);
-  renderHourlyActivity(filteredHourly, cutoff);
+  renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
@@ -2345,7 +2430,7 @@ function renderProjectChart(byProject) {
   });
 }
 
-function renderHourlyActivity(hourlyRows, cutoff) {
+function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
   const container = document.getElementById('hourly-activity-list');
   const meta = document.getElementById('hourly-activity-meta');
   if (!container) return;
@@ -2377,7 +2462,8 @@ function renderHourlyActivity(hourlyRows, cutoff) {
 
   const selectedModelsParam = encodeURIComponent(Array.from(selectedModels).join(','));
   const cutoffParam = encodeURIComponent(cutoff || '');
-  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&models=${selectedModelsParam}`;
+  const cutoffTsParam = encodeURIComponent(cutoffTs || '');
+  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
 
   container.innerHTML = withAverages.map(r => {
     const widthPct = (r.avgTokens / maxTokens) * 100;
@@ -2702,9 +2788,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
             qs = parse_qs(parsed.query or "")
             cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
+            cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
             models_raw = (qs.get("models", [""])[0] or "").strip()
             models = [m.strip() for m in models_raw.split(",") if m.strip()]
-            data = get_sessions_for_hour(hour, cutoff=cutoff, models=models)
+            data = get_sessions_for_hour(hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models)
             body = render_hour_sessions_html(data).encode("utf-8")
             status_code = 404 if "error" in data else 200
             self.send_response(status_code)
