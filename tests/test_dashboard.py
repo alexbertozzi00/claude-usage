@@ -404,6 +404,40 @@ class TestUsageSnapshot(unittest.TestCase):
         self.assertFalse(data["ok"])
         self.assertIn("Falha ao capturar saída", data["error"])
 
+    @patch("dashboard.subprocess.run")
+    def test_usage_snapshot_parses_json_token_counts(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["claude", "/usage", "--json"],
+            returncode=0,
+            stdout=json.dumps({
+                "current_session": {
+                    "used_percent": "12.5%",
+                    "available_percent": "87.5%",
+                    "used_tokens": "12345",
+                    "available_tokens": "87655",
+                    "limit_tokens": "100000",
+                    "resets_at": "2026-04-20T00:00:00Z",
+                },
+                "current_week": {
+                    "used_percent": 40,
+                    "available_percent": 60,
+                    "used_token_count": "400000",
+                    "remaining_tokens": "600000",
+                    "token_limit": "1000000",
+                    "resets_at": "2026-04-22T00:00:00Z",
+                },
+            }),
+            stderr="",
+        )
+        data = get_usage_snapshot(timeout_seconds=8)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["current_session"]["used_tokens"], 12345)
+        self.assertEqual(data["current_session"]["available_tokens"], 87655)
+        self.assertEqual(data["current_session"]["limit_tokens"], 100000)
+        self.assertEqual(data["current_week"]["used_tokens"], 400000)
+        self.assertEqual(data["current_week"]["available_tokens"], 600000)
+        self.assertEqual(data["current_week"]["limit_tokens"], 1000000)
+
 class TestHTMLTemplate(unittest.TestCase):
     def test_template_is_valid_html(self):
         self.assertIn("<!DOCTYPE html>", HTML_TEMPLATE)
@@ -428,6 +462,10 @@ class TestHTMLTemplate(unittest.TestCase):
 
     def test_template_has_session_link(self):
         self.assertIn("session-link", HTML_TEMPLATE)
+
+    def test_template_has_usage_panel(self):
+        self.assertIn("usage-panel-content", HTML_TEMPLATE)
+        self.assertIn("/api/usage", HTML_TEMPLATE)
         self.assertIn("encodeURIComponent(s.session_id_full)", HTML_TEMPLATE)
 
     def test_template_declares_renaming_session_state(self):
