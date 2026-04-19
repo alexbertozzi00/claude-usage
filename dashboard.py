@@ -250,20 +250,65 @@ def render_session_history_html(session_data):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Session History</title>
 <style>
-  body {{ background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }}
+  :root, [data-theme="dark"] {{
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #d97757;
+    --link: #6aa6ff;
+    --toggle-bg: #1f2330;
+    --toggle-text: #dbe6ff;
+  }}
+  [data-theme="light"] {{
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --border: #d6deea;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #c55f3c;
+    --link: #1d4ed8;
+    --toggle-bg: #eef2ff;
+    --toggle-text: #1e293b;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{ background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }}
   .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px; }}
-  h1 {{ font-size: 20px; margin-bottom: 12px; color: #d97757; }}
-  p {{ color: #8892a4; }}
-  a {{ color: #4f8ef7; text-decoration: none; }}
+  .toolbar {{ display: flex; justify-content: flex-end; margin-bottom: 12px; }}
+  .theme-toggle {{ border: 1px solid var(--border); background: var(--toggle-bg); color: var(--toggle-text); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }}
+  h1 {{ font-size: 20px; margin-bottom: 12px; color: var(--accent); }}
+  p {{ color: var(--muted); }}
+  a {{ color: var(--link); text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="toolbar"><button id="theme-toggle" class="theme-toggle" type="button">Toggle theme</button></div>
   <h1>Session History</h1>
   <p>{err}</p>
   <p><a href="/">← Back to dashboard</a></p>
 </div>
+<script>
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
+  function getPreferredTheme() {{
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }}
+  function applyTheme(theme) {{
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+  }}
+  applyTheme(getPreferredTheme());
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {{
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+  }});
+</script>
 </body>
 </html>"""
 
@@ -292,38 +337,82 @@ def render_session_history_html(session_data):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Session {sid}</title>
 <style>
-  :root {{
+  :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
     --border: #2a2d3a;
     --text: #e2e8f0;
     --muted: #8892a4;
     --accent: #d97757;
-    --user: #4f8ef7;
-    --assistant: #4ade80;
+    --link: #6aa6ff;
+    --entry-user-bg: #12243f;
+    --entry-assistant-bg: #113126;
+    --entry-user-text: #8fc2ff;
+    --entry-assistant-text: #8ce8b7;
+    --toggle-bg: #1f2330;
+    --toggle-text: #dbe6ff;
+  }}
+  [data-theme="light"] {{
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --border: #d6deea;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #c55f3c;
+    --link: #1d4ed8;
+    --entry-user-bg: #dbeafe;
+    --entry-assistant-bg: #dcfce7;
+    --entry-user-text: #1d4ed8;
+    --entry-assistant-text: #047857;
+    --toggle-bg: #eef2ff;
+    --toggle-text: #1e293b;
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
   .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
+  .topbar {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }}
   h1 {{ margin: 0 0 8px; font-size: 20px; color: var(--accent); }}
   .meta {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; word-break: break-all; }}
-  .back {{ display: inline-block; margin-bottom: 16px; color: #4f8ef7; text-decoration: none; }}
+  .back {{ display: inline-block; color: var(--link); text-decoration: none; font-weight: 500; }}
   .back:hover {{ text-decoration: underline; }}
+  .theme-toggle {{ border: 1px solid var(--border); background: var(--toggle-bg); color: var(--toggle-text); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }}
   .entry {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }}
   .entry-meta {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }}
-  .entry .role {{ font-weight: 600; }}
-  .entry.user .role {{ color: var(--user); }}
-  .entry.assistant .role {{ color: var(--assistant); }}
+  .entry .role {{ font-weight: 700; border-radius: 999px; padding: 2px 8px; display: inline-block; }}
+  .entry.user .role {{ color: var(--entry-user-text); background: var(--entry-user-bg); }}
+  .entry.assistant .role {{ color: var(--entry-assistant-text); background: var(--entry-assistant-bg); }}
   .entry pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.45; }}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="/">← Back to dashboard</a>
+  <div class="topbar">
+    <a class="back" href="/">← Back to dashboard</a>
+    <button id="theme-toggle" class="theme-toggle" type="button">Toggle theme</button>
+  </div>
   <h1>Session {sid}</h1>
   <div class="meta">Source: {source}</div>
   {content}
 </div>
+<script>
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
+  function getPreferredTheme() {{
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }}
+  function applyTheme(theme) {{
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+  }}
+  applyTheme(getPreferredTheme());
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {{
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+  }});
+</script>
 </body>
 </html>"""
 
@@ -336,7 +425,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>Claude Code Usage Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  :root {
+  :root, [data-theme="dark"] {
     --bg: #0f1117;
     --card: #1a1d27;
     --border: #2a2d3a;
@@ -345,13 +434,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --accent: #d97757;
     --blue: #4f8ef7;
     --green: #4ade80;
+    --chip-bg: rgba(255,255,255,0.04);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --border: #d6deea;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #c55f3c;
+    --blue: #1d4ed8;
+    --green: #047857;
+    --chip-bg: rgba(15,23,42,0.04);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  #theme-toggle { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 4px; }
+  #theme-toggle:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 4px; }
   #rescan-btn:hover { color: var(--text); border-color: var(--accent); }
   #rescan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -369,7 +473,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .range-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
   .range-btn { padding: 4px 13px; background: transparent; border: none; border-right: 1px solid var(--border); color: var(--muted); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
   .range-btn:last-child { border-right: none; }
-  .range-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .range-btn:hover { background: var(--chip-bg); color: var(--text); }
   .range-btn.active { background: rgba(217,119,87,0.15); color: var(--accent); font-weight: 600; }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
@@ -393,7 +497,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .sort-icon { font-size: 9px; opacity: 0.8; }
   td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
+  tr:hover td { background: var(--chip-bg); }
   .model-tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; background: rgba(79,142,247,0.15); color: var(--blue); }
   .cost { color: var(--green); font-family: monospace; }
   .cost-na { color: var(--muted); font-family: monospace; font-size: 11px; }
@@ -422,7 +526,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <header>
   <h1>Claude Code Usage Dashboard</h1>
   <div class="meta" id="meta">Loading...</div>
-  <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+  <div class="header-actions">
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light theme">🌙 Dark</button>
+    <button id="rescan-btn" onclick="triggerRescan()" title="Rebuild the database from scratch by re-scanning all JSONL files. Use if data looks stale or costs seem wrong.">&#x21bb; Rescan</button>
+  </div>
 </header>
 
 <div id="filter-bar">
@@ -538,6 +645,25 @@ let projectSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
+const THEME_STORAGE_KEY = 'claude_usage_theme';
+
+function getPreferredTheme() {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === 'dark' || saved === 'light') return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+}
 
 // ── Pricing (Anthropic API, April 2026) ────────────────────────────────────
 const PRICING = {
@@ -1118,6 +1244,7 @@ async function loadData() {
   }
 }
 
+applyTheme(getPreferredTheme());
 loadData();
 setInterval(loadData, 30000);
 </script>
