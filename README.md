@@ -13,7 +13,6 @@ O Claude Code grava logs locais detalhados de uso — contagem de tokens, modelo
 
 ## Novidades deste fork
 
-Neste fork, foram adicionadas as seguintes funcionalidades:
 - Possibilidade de **editar sessão**
 - **Página de sessão** para exibir o **histórico da sessão**
 - **Gráfico de tendência de consumo**
