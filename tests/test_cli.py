@@ -1,7 +1,7 @@
 """Tests for cli.py - pricing, formatting, and cost calculation."""
 
 import unittest
-from cli import get_pricing, calc_cost, fmt, fmt_cost, PRICING
+from cli import get_pricing, calc_cost, fmt, fmt_cost, fmt_date, fmt_timestamp, PRICING
 
 
 class TestGetPricing(unittest.TestCase):
@@ -128,6 +128,17 @@ class TestFmtCost(unittest.TestCase):
         self.assertEqual(fmt_cost(3.0), "$3.0000")
         self.assertEqual(fmt_cost(0.0001), "$0.0001")
         self.assertEqual(fmt_cost(0), "$0.0000")
+
+
+class TestDateFormatting(unittest.TestCase):
+    def test_fmt_date_iso_to_br(self):
+        self.assertEqual(fmt_date("2026-04-19"), "19/04/2026")
+
+    def test_fmt_timestamp_iso_to_br(self):
+        self.assertEqual(
+            fmt_timestamp("2026-04-19T13:45:59Z"),
+            "19/04/2026 13:45:59"
+        )
 
 
 class TestPricingConsistency(unittest.TestCase):
