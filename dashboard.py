@@ -105,6 +105,10 @@ GLOBAL_LOADER_CSS = """
   pointer-events: all;
 }
 
+body.global-loading-active {
+  overflow: hidden;
+}
+
 .loader {
   width: 45px;
   height: 40px;
@@ -131,6 +135,18 @@ GLOBAL_LOADER_CSS = """
 .loader .bar8 { left: 35px; animation-delay: 0.7s; }
 .loader .bar9 { left: 40px; animation-delay: 0.8s; }
 
+@media (prefers-reduced-motion: reduce) {
+  .global-loading-overlay {
+    transition: none;
+  }
+
+  .loader div {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+}
+
 @keyframes loaderFade {
   0%, 100% {
     opacity: 0.2;
@@ -154,7 +170,9 @@ GLOBAL_NAVIGATION_LOADER_SCRIPT = """
     const overlay = document.getElementById('global-loading-overlay');
     if (overlay) {
       overlay.classList.add('is-visible');
+      overlay.setAttribute('aria-busy', 'true');
     }
+    document.body?.classList.add('global-loading-active');
   }
 
   function shouldHandleNavigationClick(event, link) {
@@ -868,7 +886,7 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
-<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 {GLOBAL_LOADER_HTML}
 </div>
 {header_html}
@@ -1046,7 +1064,7 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
-<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 {GLOBAL_LOADER_HTML}
 </div>
 {header_html}
@@ -1260,7 +1278,7 @@ def render_hour_sessions_html(data):
     #toggle:checked + svg #stars {{ opacity: 1; }}
   </style>
 </head>
-<body><div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+<body><div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 {GLOBAL_LOADER_HTML}
 </div>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
 <script>
@@ -1387,7 +1405,7 @@ def render_hour_sessions_html(data):
   </style>
 </head>
 <body>
-  <div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+  <div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 {GLOBAL_LOADER_HTML}
 </div>
   {header_html}
@@ -1496,7 +1514,7 @@ def render_ranking_help_html():
 </style>
 </head>
 <body>
-<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 {GLOBAL_LOADER_HTML}
 </div>
 {header_html}
@@ -1845,7 +1863,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
 """ + GLOBAL_LOADER_HTML + r"""
 </div>
 <header>
@@ -3650,11 +3668,15 @@ async function triggerRescan() {
 // ── Data loading ───────────────────────────────────────────────────────────
 function setGlobalLoading(visible) {
   const overlay = document.getElementById('global-loading-overlay');
-  if (!overlay) return;
-  if (visible) {
+  const isVisible = Boolean(visible);
+  if (isVisible) {
     window.__globalLoadingStartedAt = Date.now();
   }
-  overlay.classList.toggle('is-visible', Boolean(visible));
+  if (overlay) {
+    overlay.classList.toggle('is-visible', isVisible);
+    overlay.setAttribute('aria-busy', isVisible ? 'true' : 'false');
+  }
+  document.body.classList.toggle('global-loading-active', isVisible);
 }
 
 function wait(ms) {
