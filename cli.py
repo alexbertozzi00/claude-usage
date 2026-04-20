@@ -10,7 +10,6 @@ Commands:
   live-usage - Open a dedicated tab with Claude CLI /usage (short-term scraping)
 """
 
-import os
 import sys
 import json
 import sqlite3
@@ -25,7 +24,7 @@ from aggregation import (
     fetch_top_projects,
 )
 
-DB_PATH = Path.home() / ".claude" / "usage.db"
+from src.backend.config import DB_PATH
 
 PRICING = {
     "claude-opus-4-6":   {"input":  5.00, "output": 25.00},
@@ -596,26 +595,9 @@ def cmd_export(format='both', period='7d', output=None, start=None, end=None):
         print(f"Markdown export saved: {md_path}")
 
 def cmd_dashboard(projects_dir=None):
-    import webbrowser
-    import threading
-    import time
+    from src.backend.app import run_dashboard
 
-    print("Running scan first...")
-    cmd_scan(projects_dir=projects_dir)
-
-    print("\nStarting dashboard server...")
-    from dashboard import serve
-
-    host = os.environ.get("HOST", "localhost")
-    port = int(os.environ.get("PORT", "8082"))
-
-    def open_browser():
-        time.sleep(1.0)
-        webbrowser.open(f"http://{host}:{port}")
-
-    t = threading.Thread(target=open_browser, daemon=True)
-    t.start()
-    serve(host=host, port=port)
+    run_dashboard(projects_dir=projects_dir)
 
 
 def cmd_live_usage():

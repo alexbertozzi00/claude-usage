@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import re
 import select
 import subprocess
 import time
 import webbrowser
 from dataclasses import dataclass, asdict
+from urllib.parse import urlparse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -27,6 +27,12 @@ CURRENT_WEEK_RE = re.compile(
     r"Current\s+week\s*\(all\s+models\).*?(?P<used>\d{1,3})%\s*used.*?Resets\s+(?P<resets>.+?)(?:\n|\r)",
     re.IGNORECASE | re.DOTALL,
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "src" / "frontend" / "templates"
+STATIC_DIR = BASE_DIR / "src" / "frontend" / "static"
+LIVE_USAGE_HTML = (TEMPLATES_DIR / "pages" / "live_usage.html").read_text(encoding="utf-8")
+
 
 
 @dataclass
@@ -67,6 +73,17 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
 
 
 def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
+    if os.name == "nt":
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error="Live usage não é suportado no Windows (requer PTY/termios).",
+        )
+
+    import pty
+
     master_fd, slave_fd = pty.openpty()
 
     try:
@@ -150,91 +167,14 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
     )
 
 
-HTML = """<!doctype html>
-<html lang=\"pt-BR\">
-<head>
-<meta charset=\"utf-8\" />
-<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
-<title>Claude Live Usage</title>
-<style>
-  body { font-family: Inter, system-ui, sans-serif; background: #0b1020; color: #e5e7eb; margin: 0; }
-  .wrap { max-width: 920px; margin: 24px auto; padding: 0 16px; }
-  .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-  .btn { border:1px solid #334155; background:#111827; color:#e5e7eb; padding:8px 12px; border-radius:8px; cursor:pointer; }
-  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }
-  .card { border:1px solid #334155; background:#111827; border-radius:12px; padding:14px; }
-  .title { color:#93c5fd; font-weight:700; margin-bottom:8px; }
-  .big { font-size:34px; font-weight:800; line-height:1; }
-  .muted { color:#94a3b8; font-size:13px; }
-  pre { white-space:pre-wrap; word-break:break-word; max-height: 220px; overflow:auto; background:#020617; border:1px solid #1e293b; padding:10px; border-radius:8px; }
-  .err { color: #fca5a5; }
-</style>
-</head>
-<body>
-<div class=\"wrap\">
-  <div class=\"head\">
-    <h1>Uso ao vivo do Claude CLI (/usage)</h1>
-    <button class=\"btn\" onclick=\"reloadNow()\">Atualizar agora</button>
-  </div>
-  <p class=\"muted\" id=\"meta\">Carregando...</p>
-  <div class=\"grid\">
-    <div class=\"card\">
-      <div class=\"title\">Current session</div>
-      <div class=\"big\" id=\"session-avail\">-</div>
-      <p class=\"muted\" id=\"session-used\"></p>
-      <p class=\"muted\" id=\"session-reset\"></p>
-    </div>
-    <div class=\"card\">
-      <div class=\"title\">Current week (all models)</div>
-      <div class=\"big\" id=\"week-avail\">-</div>
-      <p class=\"muted\" id=\"week-used\"></p>
-      <p class=\"muted\" id=\"week-reset\"></p>
-    </div>
-  </div>
-  <div class=\"card\" style=\"margin-top:12px\">
-    <div class=\"title\">Saída capturada (debug)</div>
-    <p class=\"muted err\" id=\"error\"></p>
-    <pre id=\"raw\"></pre>
-  </div>
-</div>
-<script>
-async function loadUsage() {
-  const res = await fetch('/api/live-usage');
-  const data = await res.json();
-
-  const meta = document.getElementById('meta');
-  const s = data.current_session || {};
-  const w = data.current_week || {};
-
-  document.getElementById('session-avail').textContent = s.available_percent == null ? '-' : s.available_percent + '% disponível';
-  document.getElementById('session-used').textContent = s.used_percent == null ? '' : ('Usado: ' + s.used_percent + '%');
-  document.getElementById('session-reset').textContent = s.resets_at ? ('Renova: ' + s.resets_at) : '';
-
-  document.getElementById('week-avail').textContent = w.available_percent == null ? '-' : w.available_percent + '% disponível';
-  document.getElementById('week-used').textContent = w.used_percent == null ? '' : ('Usado: ' + w.used_percent + '%');
-  document.getElementById('week-reset').textContent = w.resets_at ? ('Renova: ' + w.resets_at) : '';
-
-  document.getElementById('raw').textContent = data.raw_excerpt || '';
-  document.getElementById('error').textContent = data.error || '';
-  meta.textContent = 'Última captura: ' + (data.captured_at || '-') + (data.ok ? '' : ' (falha ao interpretar)');
-}
-
-function reloadNow(){ loadUsage().catch(console.error); }
-setInterval(() => loadUsage().catch(console.error), 30000);
-loadUsage().catch(console.error);
-</script>
-</body>
-</html>
-"""
-
-
 class LiveUsageHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            body = HTML.encode("utf-8")
+        parsed = urlparse(self.path)
+        if parsed.path in ("/", "/index.html", "/live-usage", "/live-usage/"):
+            body = LIVE_USAGE_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -242,7 +182,7 @@ class LiveUsageHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        if self.path == "/api/live-usage":
+        if parsed.path == "/api/live-usage":
             snapshot = capture_usage()
             payload = json.dumps(asdict(snapshot), ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -250,6 +190,22 @@ class LiveUsageHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+            return
+
+        if parsed.path.startswith("/static/"):
+            rel = parsed.path[len("/static/"):].lstrip("/")
+            fs_path = (STATIC_DIR / rel).resolve()
+            if not str(fs_path).startswith(str(STATIC_DIR.resolve())) or not fs_path.exists() or not fs_path.is_file():
+                self.send_response(404)
+                self.end_headers()
+                return
+            ctype = {".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png"}.get(fs_path.suffix.lower(), "application/octet-stream")
+            body = fs_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         self.send_response(404)

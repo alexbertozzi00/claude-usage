@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import subprocess
+from dataclasses import asdict
 from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -14,213 +15,55 @@ from datetime import datetime, timezone
 from collections import defaultdict
 from urllib.parse import parse_qs, unquote, urlparse
 
-from layout_components import render_app_footer, render_app_header
+from layout_components import build_app_footer_context, build_app_header_context
+from live_usage import capture_usage
 from aggregation import fetch_model_catalog
 from cli import calc_cost
+from src.backend.config import DB_PATH, HOST, PORT
+from src.backend.repositories.dashboard_repository import ensure_custom_name_column, ensure_has_tool_marker_column
+from src.backend.services.dashboard_service import compute_efficiency_rankings, rename_session as service_rename_session
+from src.backend.routes.dashboard import handle_get
+from src.backend.routes.live_usage import handle_live_usage_get
+from src.backend.routes.dashboard_routes import handle_post
 
 
-DB_PATH = Path.home() / ".claude" / "usage.db"
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-FAVICON_PATH = IMAGES_DIR / "favicon.svg"
-LOGOMARCA_PATH = IMAGES_DIR / "logomarca.png"
-MAX_CUSTOM_NAME_LENGTH = 80
-EFFICIENCY_OUTPUT_INPUT_CAP = 4.0
-COMMON_LAYOUT_STYLES = """
-  .app-header {
-    background: var(--card, #1a1d27);
-    border-bottom: 1px solid var(--border, #2a2d3a);
-    padding: 16px 24px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-  }
-  .app-header-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .app-logo-link { display: inline-flex; align-items: center; }
-  .app-logo { display: block; height: 32px; width: auto; object-fit: contain; }
-  .app-header-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--text, #e2e8f0); }
-  .app-header-subtitle { color: var(--muted, #8892a4); font-size: 12px; }
-  .app-header-right { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
-  .app-back-link {
-    color: var(--link, #6aa6ff);
-    text-decoration: none;
-    border: 1px solid var(--border, #2a2d3a);
-    padding: 8px 10px;
-    border-radius: 8px;
-    font-size: 13px;
-  }
-  .app-back-link:hover { text-decoration: underline; }
-  .app-footer { border-top: 1px solid var(--border, #2a2d3a); padding: 20px 24px; margin-top: 8px; }
-  .app-footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
-  .app-footer-content p { color: var(--muted, #8892a4); font-size: 12px; line-height: 1.7; margin: 0; }
-  .app-footer-content a { color: var(--link, #6aa6ff); text-decoration: none; }
-  .app-footer-content a:hover { text-decoration: underline; }
-"""
+TEMPLATES_DIR = Path(__file__).resolve().parent / "src" / "frontend" / "templates"
+STATIC_DIR = Path(__file__).resolve().parent / "src" / "frontend" / "static"
+LEGACY_IMAGES_DIR = Path(__file__).resolve().parent / "images"
+FAVICON_PATH = LEGACY_IMAGES_DIR / "favicon.svg"
+LOGOMARCA_PATH = LEGACY_IMAGES_DIR / "logomarca.png"
 
-HEADER_THEME_TOGGLE_HTML = """
-<label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro">
-  <input type="checkbox" id="toggle">
-  <svg viewBox="0 0 69.667 44" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
-    <g transform="translate(3.5 3.5)" data-name="Component 15 – 1" id="Component_15_1">
-      <g filter="url(#container)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><rect fill="#83cbd8" transform="translate(3.5 3.5)" rx="17.5" height="35" width="60.667" data-name="container" id="container"></rect></g>
-      <g transform="translate(2.333 2.333)" id="button"><g data-name="sun" id="sun"><g filter="url(#sun-outer)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><circle fill="#f8e664" transform="translate(5.83 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="sun-outer" id="sun-outer-2"></circle></g><g filter="url(#sun)" transform="matrix(1, 0, 0, 1, -5.83, -5.83)"><path fill="rgba(246,254,247,0.29)" transform="translate(9.33 9.33)" d="M11.667,0A11.667,11.667,0,1,1,0,11.667,11.667,11.667,0,0,1,11.667,0Z" data-name="sun" id="sun-3"></path></g><circle fill="#fcf4b9" transform="translate(8.167 8.167)" r="7" cy="7" cx="7" id="sun-inner"></circle></g><g data-name="moon" id="moon"><g filter="url(#moon)" transform="matrix(1, 0, 0, 1, -31.5, -5.83)"><circle fill="#cce6ee" transform="translate(31.5 5.83)" r="15.167" cy="15.167" cx="15.167" data-name="moon" id="moon-3"></circle></g><g fill="#a6cad0" transform="translate(-24.415 -1.009)" id="patches"><circle transform="translate(43.009 4.496)" r="2" cy="2" cx="2"></circle><circle transform="translate(39.366 17.952)" r="2" cy="2" cx="2" data-name="patch"></circle><circle transform="translate(33.016 8.044)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(51.081 18.888)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(33.016 22.503)" r="1" cy="1" cx="1" data-name="patch"></circle><circle transform="translate(50.081 10.53)" r="1.5" cy="1.5" cx="1.5" data-name="patch"></circle></g></g></g>
-      <g filter="url(#cloud)" transform="matrix(1, 0, 0, 1, -3.5, -3.5)"><path fill="#fff" transform="translate(-3466.47 -160.94)" d="M3512.81,173.815a4.463,4.463,0,0,1,2.243.62.95.95,0,0,1,.72-1.281,4.852,4.852,0,0,1,2.623.519c.034.02-.5-1.968.281-2.716a2.117,2.117,0,0,1,2.829-.274,1.821,1.821,0,0,1,.854,1.858c.063.037,2.594-.049,3.285,1.273s-.865,2.544-.807,2.626a12.192,12.192,0,0,1,2.278.892c.553.448,1.106,1.992-1.62,2.927a7.742,7.742,0,0,1-3.762-.3c-1.28-.49-1.181-2.65-1.137-2.624s-1.417,2.2-2.623,2.2a4.172,4.172,0,0,1-2.394-1.206,3.825,3.825,0,0,1-2.771.774c-3.429-.46-2.333-3.267-2.2-3.55A3.721,3.721,0,0,1,3512.81,173.815Z" data-name="cloud" id="cloud"></path></g>
-      <g fill="#def8ff" transform="translate(3.585 1.325)" id="stars"><path transform="matrix(-1, 0.017, -0.017, -1, 24.231, 3.055)" d="M.774,0,.566.559,0,.539.458.933.25,1.492l.485-.361.458.394L1.024.953,1.509.592.943.572Z"></path><path transform="matrix(-0.777, 0.629, -0.629, -0.777, 23.185, 12.358)" d="M1.341.529.836.472.736,0,.505.46,0,.4.4.729l-.231.46L.605.932l.4.326L.9.786Z" data-name="star"></path><path transform="matrix(0.438, 0.899, -0.899, 0.438, 23.177, 29.735)" d="M.015,1.065.475.9l.285.365L.766.772l.46-.164L.745.494.751,0,.481.407,0,.293.285.658Z" data-name="star"></path><path transform="translate(12.677 0.388) rotate(104)" d="M1.161,1.6,1.059,1,1.574.722.962.607.86,0,.613.572,0,.457.446.881.2,1.454l.516-.274Z" data-name="star"></path><path transform="matrix(-0.07, 0.998, -0.998, -0.07, 11.066, 15.457)" d="M.873,1.648l.114-.62L1.579.945,1.03.62,1.144,0,.706.464.157.139.438.7,0,1.167l.592-.083Z" data-name="star"></path><path transform="translate(8.326 28.061) rotate(11)" d="M.593,0,.638.724,0,.982l.7.211.045.724.36-.64.7.211L1.342.935,1.7.294,1.063.552Z" data-name="star"></path><path transform="translate(5.012 5.962) rotate(172)" d="M.816,0,.5.455,0,.311.323.767l-.312.455.516-.215.323.456L.827.911,1.343.7.839.552Z" data-name="star"></path><path transform="translate(2.218 14.616) rotate(169)" d="M1.261,0,.774.571.114.3.487.967,0,1.538.728,1.32l.372.662.047-.749.728-.218L1.215.749Z" data-name="star"></path></g>
-    </g>
-  </svg>
-</label>
-"""
 
-GLOBAL_LOADER_HTML = """
-<div id="global-loader" class="loader" aria-hidden="true">
-  <div class="bar1"></div>
-  <div class="bar2"></div>
-  <div class="bar3"></div>
-  <div class="bar4"></div>
-  <div class="bar5"></div>
-  <div class="bar6"></div>
-  <div class="bar7"></div>
-  <div class="bar8"></div>
-  <div class="bar9"></div>
-</div>
-"""
+def _read_asset(*parts):
+    path = Path(*parts)
+    return path.read_text(encoding="utf-8")
 
-GLOBAL_LOADER_CSS = """
-.global-loading-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 17, 23, 0.56);
-  z-index: 10000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease;
-}
 
-.global-loading-overlay.is-visible {
-  opacity: 1;
-  pointer-events: all;
-}
+COMMON_LAYOUT_STYLES = _read_asset(STATIC_DIR, "css", "common-layout.css")
+HEADER_THEME_TOGGLE_HTML = _read_asset(TEMPLATES_DIR, "components", "theme-toggle.html")
+GLOBAL_LOADER_HTML = _read_asset(TEMPLATES_DIR, "components", "global-loader.html")
+GLOBAL_LOADER_CSS = _read_asset(STATIC_DIR, "css", "global-loader.css")
+GLOBAL_NAVIGATION_LOADER_SCRIPT = "<script>" + _read_asset(STATIC_DIR, "js", "global-navigation-loader.js") + "</script>"
+APP_HEADER_TEMPLATE = _read_asset(TEMPLATES_DIR, "components", "app-header.html")
+APP_FOOTER_TEMPLATE = _read_asset(TEMPLATES_DIR, "components", "app-footer.html")
+LIVE_USAGE_HTML = _read_asset(TEMPLATES_DIR, "pages", "live_usage.html")
 
-body.global-loading-active {
-  overflow: hidden;
-}
 
-.loader {
-  width: 45px;
-  height: 40px;
-  position: relative;
-}
+def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar ao painel", show_back_link=True, right_html=""):
+    context = build_app_header_context(
+        title=title,
+        subtitle=subtitle,
+        back_href=back_href,
+        back_label=back_label,
+        show_back_link=show_back_link,
+        right_html=right_html,
+    )
+    return APP_HEADER_TEMPLATE.format(**context)
 
-.loader div {
-  width: 5px;
-  height: 100%;
-  background: #4f8ef7;
-  position: absolute;
-  left: 0;
-  transform-origin: center;
-  animation: loaderFade 1.2s linear infinite;
-}
 
-.loader .bar1 { left: 0px; animation-delay: 0s; }
-.loader .bar2 { left: 5px; animation-delay: 0.1s; }
-.loader .bar3 { left: 10px; animation-delay: 0.2s; }
-.loader .bar4 { left: 15px; animation-delay: 0.3s; }
-.loader .bar5 { left: 20px; animation-delay: 0.4s; }
-.loader .bar6 { left: 25px; animation-delay: 0.5s; }
-.loader .bar7 { left: 30px; animation-delay: 0.6s; }
-.loader .bar8 { left: 35px; animation-delay: 0.7s; }
-.loader .bar9 { left: 40px; animation-delay: 0.8s; }
+def render_app_footer():
+    return APP_FOOTER_TEMPLATE.format(**build_app_footer_context())
 
-@media (prefers-reduced-motion: reduce) {
-  .global-loading-overlay {
-    transition: none;
-  }
-
-  .loader div {
-    animation: none;
-    opacity: 0.9;
-    transform: none;
-  }
-}
-
-@keyframes loaderFade {
-  0%, 100% {
-    opacity: 0.2;
-    transform: scaleY(0.3);
-  }
-  50% {
-    opacity: 1;
-    transform: scaleY(1);
-  }
-}
-"""
-
-GLOBAL_NAVIGATION_LOADER_SCRIPT = """
-<script>
-(function initGlobalNavigationLoader() {
-  function hideGlobalLoadingOverlayForStaticPages() {
-    if (typeof setGlobalLoading === 'function') {
-      setGlobalLoading(false);
-      return;
-    }
-    const overlay = document.getElementById('global-loading-overlay');
-    if (overlay) {
-      overlay.classList.remove('is-visible');
-      overlay.setAttribute('aria-busy', 'false');
-    }
-    document.body?.classList.remove('global-loading-active');
-  }
-
-  function showGlobalLoadingOverlay() {
-    if (typeof setGlobalLoading === 'function') {
-      setGlobalLoading(true);
-      return;
-    }
-    const overlay = document.getElementById('global-loading-overlay');
-    if (overlay) {
-      overlay.classList.add('is-visible');
-      overlay.setAttribute('aria-busy', 'true');
-    }
-    document.body?.classList.add('global-loading-active');
-  }
-
-  function shouldHandleNavigationClick(event, link) {
-    if (!link) return false;
-    if (event.defaultPrevented) return false;
-    if (event.button !== 0) return false;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
-    if (link.getAttribute('target') === '_blank') return false;
-
-    const href = (link.getAttribute('href') || '').trim();
-    if (!href || href === '/' || href.startsWith('#')) return false;
-
-    return href.startsWith('/');
-  }
-
-  document.addEventListener('click', (event) => {
-    const link = event.target.closest("a[href^='/']");
-    if (!shouldHandleNavigationClick(event, link)) return;
-    showGlobalLoadingOverlay();
-  }, true);
-
-  window.addEventListener('beforeunload', () => {
-    showGlobalLoadingOverlay();
-  });
-
-  window.addEventListener('DOMContentLoaded', () => {
-    hideGlobalLoadingOverlayForStaticPages();
-  });
-
-  window.addEventListener('pageshow', () => {
-    hideGlobalLoadingOverlayForStaticPages();
-  });
-})();
-</script>
-"""
 
 
 def _format_date(date_str):
@@ -285,129 +128,8 @@ def _display_project_name(project_name):
     return normalized.replace("\\", "/").split("/")[-1] or "unknown"
 
 
-def ensure_custom_name_column(conn):
-    try:
-        conn.execute("SELECT custom_name FROM sessions LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE sessions ADD COLUMN custom_name TEXT")
-        conn.commit()
-
-
-def ensure_has_tool_marker_column(conn):
-    try:
-        conn.execute("SELECT has_tool_marker FROM turns LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE turns ADD COLUMN has_tool_marker INTEGER DEFAULT 0")
-        conn.commit()
-
-
-def _clamp(value, low=0.0, high=100.0):
-    return max(low, min(high, value))
-
-
-def compute_efficiency_rankings(rows, top_n=None):
-    """Compute normalized efficiency score (0-100) for session/project rows."""
-    if not rows:
-        return []
-
-    prepared = []
-    for row in rows:
-        turns = max(0, int(row.get("turns") or 0))
-        input_tokens = max(0, float(row.get("input") or 0))
-        output_tokens = max(0, float(row.get("output") or 0))
-        cache_read = max(0, float(row.get("cache_read") or 0))
-        cache_creation = max(0, float(row.get("cache_creation") or 0))
-        cost = float(row.get("cost") or 0.0)
-        duration_min = max(0.0, float(row.get("duration_min") or 0.0))
-
-        output_input_ratio = output_tokens / input_tokens if input_tokens > 0 else 0.0
-        output_input_capped = min(output_input_ratio, EFFICIENCY_OUTPUT_INPUT_CAP)
-        cache_read_pct = (cache_read / input_tokens * 100.0) if input_tokens > 0 else 0.0
-        cost_per_turn = (cost / turns) if turns > 0 else 0.0
-        turns_per_min = (turns / duration_min) if duration_min > 0 else None
-
-        prepared.append({
-            **row,
-            "output_input_ratio": output_input_ratio,
-            "output_input_capped": output_input_capped,
-            "cache_read_pct": cache_read_pct,
-            "cost_per_turn": cost_per_turn,
-            "turns_per_min": turns_per_min,
-        })
-
-    max_cost_per_turn = max((r["cost_per_turn"] for r in prepared), default=0.0)
-    max_turns_per_min = max((r["turns_per_min"] or 0.0 for r in prepared), default=0.0)
-
-    ranking = []
-    for row in prepared:
-        output_input_score = _clamp((row["output_input_capped"] / EFFICIENCY_OUTPUT_INPUT_CAP) * 100.0)
-        cache_read_score = _clamp(row["cache_read_pct"])
-        if max_cost_per_turn <= 0:
-            cost_per_turn_score = 100.0
-        else:
-            cost_per_turn_score = _clamp((1.0 - (row["cost_per_turn"] / max_cost_per_turn)) * 100.0)
-
-        subscores = {
-            "output_input": round(output_input_score, 2),
-            "cache_read_pct": round(cache_read_score, 2),
-            "cost_per_turn": round(cost_per_turn_score, 2),
-        }
-
-        if row["turns_per_min"] is not None:
-            turns_per_min_score = 100.0 if max_turns_per_min <= 0 else _clamp((row["turns_per_min"] / max_turns_per_min) * 100.0)
-            subscores["turns_per_min"] = round(turns_per_min_score, 2)
-
-        score_total = round(sum(subscores.values()) / len(subscores), 2) if subscores else 0.0
-
-        ranking.append({
-            **row,
-            "score_total": score_total,
-            "subscores": subscores,
-        })
-
-    ranking.sort(key=lambda item: (-item["score_total"], -(item.get("turns") or 0), str(item.get("id") or item.get("project") or "")))
-    if top_n is None:
-        return ranking
-    return ranking[:top_n]
-
-
 def rename_session(session_id, custom_name, db_path=DB_PATH):
-    if not session_id:
-        return {"ok": False, "error": "session_id é obrigatório."}, 400
-
-    normalized = (custom_name or "").strip()
-    if len(normalized) > MAX_CUSTOM_NAME_LENGTH:
-        return {"ok": False, "error": f"custom_name deve ter no máximo {MAX_CUSTOM_NAME_LENGTH} caracteres."}, 400
-
-    if not db_path.exists():
-        return {"ok": False, "error": "Banco de dados não encontrado."}, 404
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        ensure_custom_name_column(conn)
-        existing = conn.execute(
-            "SELECT session_id FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if existing is None:
-            return {"ok": False, "error": "Sessão não encontrada."}, 404
-
-        value = normalized if normalized else None
-        conn.execute(
-            "UPDATE sessions SET custom_name = ? WHERE session_id = ?",
-            (value, session_id),
-        )
-        conn.commit()
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "custom_name": value,
-        }, 200
-    except sqlite3.Error as e:
-        return {"ok": False, "error": f"Erro ao renomear sessão: {e}"}, 500
-    finally:
-        conn.close()
+    return service_rename_session(session_id=session_id, custom_name=custom_name, db_path=db_path)
 
 
 def get_dashboard_data(db_path=DB_PATH, local_tz=None):
@@ -872,7 +594,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
 <title>ClaudeFlow - Sessão</title>
 <style>
 {GLOBAL_LOADER_CSS}
@@ -962,7 +684,7 @@ def render_session_history_html(session_data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
 <title>{escape(f"ClaudeFlow - {title_text}")}</title>
 <style>
 {GLOBAL_LOADER_CSS}
@@ -1489,7 +1211,7 @@ def render_ranking_help_html():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
 <title>ClaudeFlow - Ajuda do Ranking</title>
 <style>
 {GLOBAL_LOADER_CSS}
@@ -1651,7 +1373,7 @@ def render_trend_help_html():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
 <title>ClaudeFlow - Ajuda da Tendência de Uso</title>
 <style>
 {GLOBAL_LOADER_CSS}
@@ -1801,7 +1523,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
 <title>ClaudeFlow - Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -2102,7 +1824,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 """ + GLOBAL_LOADER_HTML + r"""
 </div>
 <header>
-  <h1><img class="logomarca" src="/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
+  <h1><img class="logomarca" src="/static/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
   <div class="header-controls">
     <div class="header-actions">
     <label id="theme-toggle-button" aria-label="Alternar tema entre claro e escuro" title="Alternar tema">
@@ -4046,89 +3768,70 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/index.html"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
-        elif parsed.path == "/api/data":
-            data = get_dashboard_data()
-            body = json.dumps(data).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path.startswith("/hour/"):
-            hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
-            qs = parse_qs(parsed.query or "")
-            cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
-            cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
-            models_raw = (qs.get("models", [""])[0] or "").strip()
-            models = [m.strip() for m in models_raw.split(",") if m.strip()]
-            data = get_sessions_for_hour(hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models)
-            body = render_hour_sessions_html(data).encode("utf-8")
-            status_code = 404 if "error" in data else 200
-            self.send_response(status_code)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path.startswith("/session/"):
-            session_id = unquote(parsed.path[len("/session/"):]).strip()
-            session_data = get_session_history(session_id)
-            body = render_session_history_html(session_data).encode("utf-8")
-            status_code = 404 if "error" in session_data else 200
-            self.send_response(status_code)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/ranking/help", "/help/ranking"):
-            body = render_ranking_help_html().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/trend/help", "/help/trend"):
-            body = render_trend_help_html().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/favicon.svg", "/favicon.ico", "/images/favicon.svg"):
-            if not FAVICON_PATH.exists():
-                self.send_response(404)
-                self.end_headers()
-                return
-            body = FAVICON_PATH.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/svg+xml")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path == "/images/logomarca.png":
-            if not LOGOMARCA_PATH.exists():
-                self.send_response(404)
-                self.end_headers()
-                return
-            body = LOGOMARCA_PATH.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        else:
+        handled = handle_get(self, parsed, {
+            "HTML_TEMPLATE": HTML_TEMPLATE,
+            "get_dashboard_data": get_dashboard_data,
+            "get_sessions_for_hour": get_sessions_for_hour,
+            "get_session_history": get_session_history,
+            "render_hour_sessions_html": render_hour_sessions_html,
+            "render_session_history_html": render_session_history_html,
+            "render_ranking_help_html": render_ranking_help_html,
+            "render_trend_help_html": render_trend_help_html,
+            "parse_qs": parse_qs,
+            "json_dumps": json.dumps,
+        })
+        if not handled:
+            handled = handle_live_usage_get(self, parsed, {
+                "LIVE_USAGE_HTML": LIVE_USAGE_HTML,
+                "json_dumps": json.dumps,
+            })
+        if not handled:
             self.send_response(404)
             self.end_headers()
 
+    def _serve_static(self, path):
+        rel = path[len("/static/"):].lstrip("/")
+        fs_path = (STATIC_DIR / rel).resolve()
+        static_root = STATIC_DIR.resolve()
+
+        if not str(fs_path).startswith(str(static_root)):
+            self.send_response(403)
+            self.end_headers()
+            return
+
+        if rel.startswith("images/") and not fs_path.exists():
+            legacy_path = (LEGACY_IMAGES_DIR / rel[len("images/"):]).resolve()
+            if str(legacy_path).startswith(str(LEGACY_IMAGES_DIR.resolve())):
+                fs_path = legacy_path
+
+        if not fs_path.exists() or not fs_path.is_file():
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        ext = fs_path.suffix.lower()
+        ctype = {
+            ".css": "text/css; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".html": "text/html; charset=utf-8",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+        }.get(ext, "application/octet-stream")
+
+        body = fs_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/rescan":
-            # Full rebuild: delete DB and rescan from scratch
+        def _do_rescan():
             try:
                 if DB_PATH.exists():
                     DB_PATH.unlink()
@@ -4143,37 +3846,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "sessions": 0,
                     "error": str(e),
                 }
-            body = json.dumps(result).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path == "/api/session/rename":
-            content_length = int(self.headers.get("Content-Length", "0") or "0")
-            body_raw = self.rfile.read(content_length) if content_length > 0 else b""
-            try:
-                payload = json.loads(body_raw.decode("utf-8") or "{}")
-            except json.JSONDecodeError:
-                payload = {}
-            result, status_code = rename_session(
-                session_id=(payload.get("session_id") or "").strip() if isinstance(payload, dict) else "",
-                custom_name=(payload.get("custom_name") if isinstance(payload, dict) else ""),
-            )
-            body = json.dumps(result).encode("utf-8")
-            self.send_response(status_code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        else:
+            return json.dumps(result).encode("utf-8")
+
+        handled = handle_post(self, parsed, {
+            "do_rescan": _do_rescan,
+            "rename_session": rename_session,
+        })
+        if not handled:
             self.send_response(404)
             self.end_headers()
 
 
 def serve(host=None, port=None):
-    host = host or os.environ.get("HOST", "localhost")
-    port = port or int(os.environ.get("PORT", "8082"))
+    host = host or HOST
+    port = port or PORT
     server = HTTPServer((host, port), DashboardHandler)
     print(f"Dashboard running at http://{host}:{port}")
     print("Press Ctrl+C to stop.")
