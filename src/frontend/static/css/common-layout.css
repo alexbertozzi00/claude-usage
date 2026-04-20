@@ -1,0 +1,30 @@
+.app-header {
+  background: var(--card, #1a1d27);
+  border-bottom: 1px solid var(--border, #2a2d3a);
+  padding: 16px 24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.app-header-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.app-logo-link { display: inline-flex; align-items: center; }
+.app-logo { display: block; height: 32px; width: auto; object-fit: contain; }
+.app-header-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--text, #e2e8f0); }
+.app-header-subtitle { color: var(--muted, #8892a4); font-size: 12px; }
+.app-header-right { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
+.app-back-link {
+  color: var(--link, #6aa6ff);
+  text-decoration: none;
+  border: 1px solid var(--border, #2a2d3a);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.app-back-link:hover { text-decoration: underline; }
+.app-footer { border-top: 1px solid var(--border, #2a2d3a); padding: 20px 24px; margin-top: 8px; }
+.app-footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
+.app-footer-content p { color: var(--muted, #8892a4); font-size: 12px; line-height: 1.7; margin: 0; }
+.app-footer-content a { color: var(--link, #6aa6ff); text-decoration: none; }
+.app-footer-content a:hover { text-decoration: underline; }

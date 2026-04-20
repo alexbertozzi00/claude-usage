@@ -1,12 +1,19 @@
 """
-layout_components.py - Shared HTML layout fragments used by dashboard pages.
+layout_components.py - Shared layout context helpers used by dashboard pages.
 """
 
 from html import escape
 
 
-def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar ao painel", show_back_link=True, right_html=""):
-    """Render a lightweight shared page header."""
+def build_app_header_context(
+    title,
+    subtitle="",
+    back_href="/",
+    back_label="← Voltar ao painel",
+    show_back_link=True,
+    right_html="",
+):
+    """Build escaped context values for header rendering."""
     safe_title = escape(title or "ClaudeFlow")
     safe_subtitle = escape(subtitle or "")
     safe_back_href = escape(back_href or "/")
@@ -15,27 +22,16 @@ def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar 
     back_html = f'<a class="app-back-link" href="{safe_back_href}">{safe_back_label}</a>' if show_back_link else ""
     right_block = f'<div class="app-header-right">{right_html}</div>' if right_html else ""
 
-    return (
-        '<header class="app-header">'
-        '<div class="app-header-main">'
-        '<a class="app-logo-link" href="/" aria-label="Ir para o dashboard">'
-        '<img class="app-logo" src="/images/logomarca.png" alt="Painel de Uso do Claude Code">'
-        "</a>"
-        f'<h1 class="app-header-title">{safe_title}</h1>'
-        f"{subtitle_html}"
-        "</div>"
-        f"{right_block}"
-        f"{back_html}"
-        "</header>"
-    )
+    return {
+        "title": safe_title,
+        "subtitle_html": subtitle_html,
+        "back_html": back_html,
+        "right_block": right_block,
+    }
 
 
-def render_app_footer():
-    """Render shared footer for all pages."""
-    return (
-        '<footer class="app-footer">'
-        '<div class="app-footer-content">'
-        "<p>Alexandre Bertozzi ©2026</p>"
-        "</div>"
-        "</footer>"
-    )
+def build_app_footer_context():
+    """Build footer context for shared pages."""
+    return {
+        "copyright": "Alexandre Bertozzi ©2026",
+    }

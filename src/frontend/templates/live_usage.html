@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Claude Live Usage</title>
+<link rel="stylesheet" href="/static/css/live-usage.css" />
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Uso ao vivo do Claude CLI (/usage)</h1>
+    <button class="btn" onclick="reloadNow()">Atualizar agora</button>
+  </div>
+  <p class="muted" id="meta">Carregando...</p>
+  <div class="grid">
+    <div class="card">
+      <div class="title">Current session</div>
+      <div class="big" id="session-avail">-</div>
+      <p class="muted" id="session-used"></p>
+      <p class="muted" id="session-reset"></p>
+    </div>
+    <div class="card">
+      <div class="title">Current week (all models)</div>
+      <div class="big" id="week-avail">-</div>
+      <p class="muted" id="week-used"></p>
+      <p class="muted" id="week-reset"></p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="title">Saída capturada (debug)</div>
+    <p class="muted err" id="error"></p>
+    <pre id="raw"></pre>
+  </div>
+</div>
+<script src="/static/js/live-usage.js"></script>
+</body>
+</html>
