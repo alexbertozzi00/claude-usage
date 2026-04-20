@@ -1517,6 +1517,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .cost { color: var(--green); font-family: monospace; }
   .cost-na { color: var(--muted); font-family: monospace; font-size: 11px; }
   .num { font-family: monospace; }
+  .score-excellent { color: #16a34a; }
+  .score-good { color: #38bdf8; }
+  .score-medium { color: #facc15; }
+  .score-poor { color: #ef4444; }
   .muted { color: var(--muted); }
   .session-link { color: var(--blue); text-decoration: none; }
   .session-link:hover { text-decoration: underline; }
@@ -2943,6 +2947,13 @@ function renderProjectCostSummary(allProjects) {
   summaryEl.textContent = `Total de ${allProjects.length} projetos no filtro atual. Soma da tabela: ${fmtCost(totalCost)}.`;
 }
 
+function scoreClass(score) {
+  if (score >= 75) return 'score-excellent';
+  if (score >= 70) return 'score-good';
+  if (score >= 65) return 'score-medium';
+  return 'score-poor';
+}
+
 function renderEfficiencySessionRanking(rankingSessions) {
   const body = document.getElementById('ranking-sessions-body');
   if (!body) return;
@@ -2957,7 +2968,7 @@ function renderEfficiencySessionRanking(rankingSessions) {
     <tr>
       <td class="muted" style="font-family:monospace">${sessionCell}</td>
       <td>${esc(item.project || '-')}</td>
-      <td class="num"><strong>${item.score_total.toFixed(2)}</strong></td>
+      <td class="num"><strong class="${scoreClass(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
       <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}${item.subscores.turns_per_min !== undefined ? ` · TPM ${item.subscores.turns_per_min.toFixed(1)}` : ''}</td>
       <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
       <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
@@ -2974,7 +2985,7 @@ function renderEfficiencyProjectRanking(rankingProjects) {
   body.innerHTML = (rankingProjects || []).map(item => `
     <tr>
       <td>${esc(item.project || item.id || '-')}</td>
-      <td class="num"><strong>${item.score_total.toFixed(2)}</strong></td>
+      <td class="num"><strong class="${scoreClass(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
       <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}</td>
       <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
       <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
