@@ -526,6 +526,14 @@ class TestHTMLTemplate(unittest.TestCase):
         self.assertIn("id=\"insights-list\"", HTML_TEMPLATE)
         self.assertIn("function renderInsights(", HTML_TEMPLATE)
 
+    def test_template_has_project_cost_summary_footer(self):
+        self.assertIn('id="project-cost-summary"', HTML_TEMPLATE)
+        self.assertIn("function renderProjectCostSummary(allProjects)", HTML_TEMPLATE)
+
+    def test_template_renders_all_projects_without_hardcoded_slice(self):
+        self.assertIn("renderProjectCostTable(lastByProject);", HTML_TEMPLATE)
+        self.assertNotIn("lastByProject.slice(0, 20)", HTML_TEMPLATE)
+
 
 class TestPricingParity(unittest.TestCase):
     """Verify CLI and dashboard pricing tables stay in sync."""

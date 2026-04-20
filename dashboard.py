@@ -15,7 +15,9 @@ from collections import defaultdict
 from urllib.parse import parse_qs, unquote, urlparse
 
 from layout_components import render_app_footer, render_app_header
+from aggregation import fetch_model_catalog
 from cli import calc_cost
+
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
@@ -268,13 +270,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     ensure_has_tool_marker_column(conn)
 
     # ── All models (for filter UI) ────────────────────────────────────────────
-    model_rows = conn.execute("""
-        SELECT COALESCE(model, 'unknown') as model
-        FROM turns
-        GROUP BY model
-        ORDER BY SUM(input_tokens + output_tokens) DESC
-    """).fetchall()
-    all_models = [r["model"] for r in model_rows]
+    all_models = fetch_model_catalog(conn)
 
     turns_rows = conn.execute("""
         SELECT
@@ -1644,37 +1640,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </table>
     <div id="project-cost-summary" class="table-footer"></div>
   </div>
-  <div class="table-card">
-    <div class="section-title">Ranking de Eficiência por Sessão</div>
-    <table>
-      <thead><tr>
-        <th>Sessão</th>
-        <th>Projeto</th>
-        <th>Score total</th>
-        <th>Subscores</th>
-        <th>Custo/turn</th>
-        <th>Output/Input</th>
-        <th>Cache%</th>
-        <th>Interações</th>
-      </tr></thead>
-      <tbody id="ranking-sessions-body"></tbody>
-    </table>
-  </div>
-  <div class="table-card">
-    <div class="section-title">Ranking de Eficiência por Projeto</div>
-    <table>
-      <thead><tr>
-        <th>Projeto</th>
-        <th>Score total</th>
-        <th>Subscores</th>
-        <th>Custo/turn</th>
-        <th>Output/Input</th>
-        <th>Cache%</th>
-        <th>Interações</th>
-      </tr></thead>
-      <tbody id="ranking-projects-body"></tbody>
-    </table>
-  </div>
 </div>
 
 <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -2356,6 +2321,7 @@ function applyFilter() {
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
+  renderProjectCostSummary(lastByProject);
   renderProjectCostTable(lastByProject.slice(0, 20));
   renderEfficiencySessionRanking(rankingSessions);
   renderEfficiencyProjectRanking(rankingProjects);
@@ -2788,6 +2754,13 @@ function renderProjectCostTable(byProject) {
   }).join('');
 }
 
+function renderProjectCostSummary(allProjects) {
+  const summaryEl = document.getElementById('project-cost-summary');
+  if (!summaryEl) return;
+  const totalCost = allProjects.reduce((sum, p) => sum + (p.cost || 0), 0);
+  summaryEl.textContent = `Total de ${allProjects.length} projetos no filtro atual. Soma da tabela: ${fmtCost(totalCost)}.`;
+}
+
 function renderEfficiencySessionRanking(rankingSessions) {
   const body = document.getElementById('ranking-sessions-body');
   if (!body) return;
@@ -2819,6 +2792,7 @@ function renderEfficiencyProjectRanking(rankingProjects) {
       <td class="num">${fmt(item.turns || 0)}</td>
     </tr>
   `).join('');
+
 }
 
 // ── CSV Export ────────────────────────────────────────────────────────────

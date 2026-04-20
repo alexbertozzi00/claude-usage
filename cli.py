@@ -12,9 +12,18 @@ Commands:
 
 import os
 import sys
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime, date
+
+from aggregation import (
+    SCHEMA_VERSION,
+    parse_period_spec,
+    fetch_period_summary,
+    fetch_top_models,
+    fetch_top_projects,
+)
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 
@@ -404,6 +413,188 @@ def cmd_insights():
     print()
 
 
+
+
+def _row_cost(row):
+    return calc_cost(
+        row["model"],
+        row["input_tokens"] or 0,
+        row["output_tokens"] or 0,
+        row["cache_read_tokens"] or 0,
+        row["cache_creation_tokens"] or 0,
+    )
+
+
+def _build_export_payload(conn, period, *, custom_start=None, custom_end=None):
+    spec = parse_period_spec(period, custom_start=custom_start, custom_end=custom_end)
+
+    current = fetch_period_summary(conn, spec["current"]["start"], spec["current"]["end"])
+    previous = fetch_period_summary(conn, spec["previous"]["start"], spec["previous"]["end"])
+    top_models_rows = fetch_top_models(conn, spec["current"]["start"], spec["current"]["end"])
+    top_projects_rows = fetch_top_projects(conn, spec["current"]["start"], spec["current"]["end"])
+
+    current_cost = sum(_row_cost(r) for r in top_models_rows)
+
+    current_kpis = {
+        "sessions": current["sessions"],
+        "turns": current["turns"],
+        "input_tokens": current["input_tokens"],
+        "output_tokens": current["output_tokens"],
+        "cache_read_tokens": current["cache_read_tokens"],
+        "cache_creation_tokens": current["cache_creation_tokens"],
+        "estimated_cost_usd": round(current_cost, 6),
+    }
+
+    previous_kpis = {
+        "sessions": previous["sessions"],
+        "turns": previous["turns"],
+        "input_tokens": previous["input_tokens"],
+        "output_tokens": previous["output_tokens"],
+        "cache_read_tokens": previous["cache_read_tokens"],
+        "cache_creation_tokens": previous["cache_creation_tokens"],
+    }
+
+    deltas = {}
+    for key in ("sessions", "turns", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens"):
+        deltas[key] = current_kpis[key] - previous_kpis[key]
+
+    top_models = []
+    for row in top_models_rows:
+        top_models.append({
+            "model": row["model"],
+            "sessions": row["sessions"],
+            "turns": row["turns"],
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
+            "estimated_cost_usd": round(_row_cost(row), 6),
+        })
+
+    top_projects = []
+    for row in top_projects_rows:
+        top_projects.append({
+            "project": row["project"],
+            "sessions": row["sessions"],
+            "turns": row["turns"],
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
+        })
+
+    alerts = []
+    if current_kpis["sessions"] == 0:
+        alerts.append("Nenhuma sessão no período selecionado.")
+    if current_kpis["input_tokens"] > 0 and (current_kpis["output_tokens"] / current_kpis["input_tokens"]) > 1.0:
+        alerts.append("Relação saída/entrada acima de 1.0: revise limites de verbosidade.")
+    if current_kpis["input_tokens"] > 0 and (current_kpis["cache_read_tokens"] / current_kpis["input_tokens"]) < 0.15:
+        alerts.append("Baixo reaproveitamento de cache: tente padronizar prompts recorrentes.")
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "period": spec,
+        "kpis": current_kpis,
+        "comparison_previous_period": {
+            "kpis": previous_kpis,
+            "delta": deltas,
+        },
+        "top_models": top_models,
+        "top_projects": top_projects,
+        "alerts": alerts,
+    }
+
+
+def _render_markdown_report(payload):
+    period = payload["period"]["current"]
+    previous = payload["period"]["previous"]
+    kpis = payload["kpis"]
+    comp = payload["comparison_previous_period"]["delta"]
+
+    lines = [
+        f"# Relatório de uso Claude Code ({period['start']} até {period['end']})",
+        "",
+        f"Período anterior equivalente: {previous['start']} até {previous['end']}",
+        "",
+        "## KPIs",
+        "",
+        f"- Sessões: **{kpis['sessions']}** ({comp['sessions']:+d} vs período anterior)",
+        f"- Interações (turns): **{kpis['turns']}** ({comp['turns']:+d} vs período anterior)",
+        f"- Tokens de entrada: **{kpis['input_tokens']}** ({comp['input_tokens']:+d})",
+        f"- Tokens de saída: **{kpis['output_tokens']}** ({comp['output_tokens']:+d})",
+        f"- Custo estimado: **${kpis['estimated_cost_usd']:.4f}**",
+        "",
+        "## Top modelos",
+        "",
+        "| Modelo | Sessões | Turns | Input | Output | Custo (USD) |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+
+    if payload["top_models"]:
+        for item in payload["top_models"]:
+            lines.append(
+                f"| {item['model']} | {item['sessions']} | {item['turns']} | {item['input_tokens']} | {item['output_tokens']} | {item['estimated_cost_usd']:.4f} |"
+            )
+    else:
+        lines.append("| (sem dados) | 0 | 0 | 0 | 0 | 0.0000 |")
+
+    lines.extend([
+        "",
+        "## Top projetos",
+        "",
+        "| Projeto | Sessões | Turns | Input | Output |",
+        "|---|---:|---:|---:|---:|",
+    ])
+
+    if payload["top_projects"]:
+        for item in payload["top_projects"]:
+            lines.append(
+                f"| {item['project']} | {item['sessions']} | {item['turns']} | {item['input_tokens']} | {item['output_tokens']} |"
+            )
+    else:
+        lines.append("| (sem dados) | 0 | 0 | 0 | 0 |")
+
+    lines.extend(["", "## Alertas", ""])
+    if payload["alerts"]:
+        for alert in payload["alerts"]:
+            lines.append(f"- {alert}")
+    else:
+        lines.append("- Nenhum alerta no período.")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def cmd_export(format='both', period='7d', output=None, start=None, end=None):
+    conn = require_db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = _build_export_payload(conn, period, custom_start=start, custom_end=end)
+    finally:
+        conn.close()
+
+    format = (format or 'both').lower()
+    if format not in {'json', 'md', 'both'}:
+        print("Invalid --format. Use: json|md|both")
+        sys.exit(1)
+
+    base = Path(output) if output else Path(f"claude_usage_export_{payload['period']['current']['end']}")
+    base_parent = base.parent if base.parent != Path('') else Path('.')
+    base_parent.mkdir(parents=True, exist_ok=True)
+
+    json_path = None
+    md_path = None
+    if format in {'json', 'both'}:
+        json_path = base if base.suffix == '.json' and format == 'json' else base.with_suffix('.json')
+        json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding='utf-8')
+        print(f"JSON export saved: {json_path}")
+
+    if format in {'md', 'both'}:
+        md_path = base if base.suffix == '.md' and format == 'md' else base.with_suffix('.md')
+        md_path.write_text(_render_markdown_report(payload), encoding='utf-8')
+        print(f"Markdown export saved: {md_path}")
+
 def cmd_dashboard(projects_dir=None):
     import webbrowser
     import threading
@@ -445,6 +636,7 @@ Usage:
   python cli.py insights                     Show actionable efficiency insights
   python cli.py dashboard [--projects-dir PATH]  Scan + start dashboard
   python cli.py live-usage                   Open live /usage scraping dashboard
+  python cli.py export --format json|md|both --period 7d|14d|30d|custom --output PATH [--start YYYY-MM-DD --end YYYY-MM-DD]
 """
 
 COMMANDS = {
@@ -454,6 +646,7 @@ COMMANDS = {
     "insights": cmd_insights,
     "dashboard": cmd_dashboard,
     "live-usage": cmd_live_usage,
+    "export": cmd_export,
 }
 
 def parse_projects_dir(args):
@@ -463,15 +656,51 @@ def parse_projects_dir(args):
             return args[i + 1]
     return None
 
+def parse_export_args(args):
+    parsed = {"format": "both", "period": "7d", "output": None, "start": None, "end": None}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--format", "--period", "--output", "--start", "--end"):
+            if i + 1 >= len(args):
+                raise ValueError(f"Missing value for {arg}")
+            value = args[i + 1]
+            if arg == "--format":
+                parsed["format"] = value
+            elif arg == "--period":
+                parsed["period"] = value
+            elif arg == "--output":
+                parsed["output"] = value
+            elif arg == "--start":
+                parsed["start"] = value
+            elif arg == "--end":
+                parsed["end"] = value
+            i += 2
+            continue
+        raise ValueError(f"Unknown export argument: {arg}")
+    return parsed
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         print(USAGE)
         sys.exit(0)
 
     command = sys.argv[1]
-    projects_dir = parse_projects_dir(sys.argv[2:])
 
-    if command in ("scan", "dashboard") and projects_dir:
-        COMMANDS[command](projects_dir=projects_dir)
+    if command in ("scan", "dashboard"):
+        projects_dir = parse_projects_dir(sys.argv[2:])
+        if projects_dir:
+            COMMANDS[command](projects_dir=projects_dir)
+        else:
+            COMMANDS[command]()
+    elif command == "export":
+        try:
+            options = parse_export_args(sys.argv[2:])
+            COMMANDS[command](**options)
+        except ValueError as e:
+            print(f"Error: {e}")
+            print(USAGE)
+            sys.exit(1)
     else:
         COMMANDS[command]()
