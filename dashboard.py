@@ -73,7 +73,7 @@ HEADER_THEME_TOGGLE_HTML = """
 """
 
 GLOBAL_LOADER_HTML = """
-<div class="loader" aria-hidden="true">
+<div id="global-loader" class="loader" aria-hidden="true">
   <div class="bar1"></div>
   <div class="bar2"></div>
   <div class="bar3"></div>
@@ -87,6 +87,24 @@ GLOBAL_LOADER_HTML = """
 """
 
 GLOBAL_LOADER_CSS = """
+.global-loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.56);
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.global-loading-overlay.is-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
 .loader {
   width: 45px;
   height: 40px;
@@ -776,6 +794,7 @@ def render_session_history_html(session_data):
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>ClaudeFlow - Sessão</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -809,6 +828,9 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <div class="wrap">
   <h1>Histórico da Sessão</h1>
@@ -862,6 +884,7 @@ def render_session_history_html(session_data):
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>{escape(f"ClaudeFlow - {title_text}")}</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -983,6 +1006,9 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <div class="wrap">
   <div class="panel">
@@ -1140,6 +1166,7 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora</title>
   <style>
+{GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
       --bg: #0f1117;
       --card: #1a1d27;
@@ -1192,7 +1219,9 @@ def render_hour_sessions_html(data):
     #toggle:checked + svg #stars {{ opacity: 1; }}
   </style>
 </head>
-<body>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
+<body><div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
 <script>
   const THEME_STORAGE_KEY = 'claude_usage_theme';
   function getPreferredTheme() {{
@@ -1258,6 +1287,7 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora ({hour})</title>
   <style>
+{GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
       --bg: #0f1117;
       --card: #1a1d27;
@@ -1315,6 +1345,9 @@ def render_hour_sessions_html(data):
   </style>
 </head>
 <body>
+  <div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
   {header_html}
   <div class="wrap">
     <div class="meta">Atualizado em: {escape(data.get("generated_at") or "")}</div>
@@ -1372,6 +1405,7 @@ def render_ranking_help_html():
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>ClaudeFlow - Ajuda do Ranking</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -1419,6 +1453,9 @@ def render_ranking_help_html():
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <main class="wrap">
   <article class="panel">
@@ -1753,23 +1790,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .disclaimer-banner strong { color: var(--text); }
   .disclaimer-banner p { margin: 0; }
   .disclaimer-banner p + p { margin-top: 8px; }
-  .global-loading-overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(15, 17, 23, 0.56);
-    z-index: 10000;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.25s ease;
-  }
-  .global-loading-overlay.is-visible {
-    opacity: 1;
-    pointer-events: all;
-  }
-
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
   .footer-content p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 4px; }
