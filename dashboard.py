@@ -1591,7 +1591,7 @@ def render_ranking_help_html():
   function applyTheme(theme) {{
     const finalTheme = theme === 'light' ? 'light' : 'dark';
     root.setAttribute('data-theme', finalTheme);
-    if (toggleInput) toggleInput.checked = finalTheme === 'light';
+    if (toggleInput) toggleInput.checked = finalTheme === 'dark';
   }}
   function getInitialTheme() {{
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -1601,7 +1601,7 @@ def render_ranking_help_html():
   function initThemeToggle() {{
     if (!toggleInput) return;
     toggleInput.addEventListener('change', (ev) => {{
-      const nextTheme = ev.target.checked ? 'light' : 'dark';
+      const nextTheme = ev.target.checked ? 'dark' : 'light';
       localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
       applyTheme(nextTheme);
     }});
