@@ -772,9 +772,17 @@ def render_session_history_html(session_data):
         timestamp = escape(entry["timestamp"] or "-")
         raw_text = entry["text"] or ""
         text = escape(raw_text)
-        tool_marker_class = " tool-message" if "[tool_" in raw_text.lower() else ""
+        raw_text_lower = raw_text.lower()
+        tool_marker_class = " tool-message" if "[tool_" in raw_text_lower else ""
         aiox_marker_class = " aiox-message" if "ACTIVATION-NOTICE:" in raw_text else ""
-        row_html = f"""<article class="entry {role}{tool_marker_class}{aiox_marker_class}">
+        cli_boilerplate_marker_class = " cli-boilerplate-message" if any(
+            marker in raw_text_lower for marker in (
+                "<local-command-caveat>",
+                "<local-command-stdout>",
+                "<command-name>",
+            )
+        ) else ""
+        row_html = f"""<article class="entry {role}{tool_marker_class}{aiox_marker_class}{cli_boilerplate_marker_class}">
   <div class="entry-meta">
     <span class="role">{role_label}</span>
     <span class="time">{timestamp}</span>
@@ -916,6 +924,7 @@ def render_session_history_html(session_data):
   .entry pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.45; }}
   body.hide-tools-enabled .entry.tool-message {{ display: none; }}
   body.hide-aiox-enabled .entry.aiox-message {{ display: none; }}
+  body.hide-cli-boilerplate-enabled .entry.cli-boilerplate-message {{ display: none; }}
 </style>
 </head>
 <body>
@@ -943,6 +952,16 @@ def render_session_history_html(session_data):
         <span class="tooltip-text">Oculta mensagens que contenham ACTIVATION-NOTICE:, reduzindo ruído visual na leitura da sessão.</span>
       </span>
     </div>
+    <div class="hide-tools">
+      <label for="hide-cli-boilerplate-toggle">
+        <input type="checkbox" id="hide-cli-boilerplate-toggle">
+        <span>Ocultar boilerplate CLI Claude</span>
+      </label>
+      <span class="tooltip" tabindex="0" aria-label="Ajuda sobre ocultar boilerplate CLI Claude">
+        ?
+        <span class="tooltip-text">Oculta mensagens que contenham &lt;local-command-caveat&gt;, &lt;local-command-stdout&gt; ou &lt;command-name&gt;.</span>
+      </span>
+    </div>
   </div>
   <div class="session-title-row">
     <h1 id="session-title">{custom_name if custom_name_raw else f"Sessão {sid}"}</h1>
@@ -961,6 +980,7 @@ def render_session_history_html(session_data):
   const THEME_STORAGE_KEY = 'claude_usage_theme';
   const HIDE_TOOLS_STORAGE_KEY = 'claude_usage_hide_tools';
   const HIDE_AIOX_STORAGE_KEY = 'claude_usage_hide_aiox';
+  const HIDE_CLI_BOILERPLATE_STORAGE_KEY = 'claude_usage_hide_cli_boilerplate';
   function getPreferredTheme() {{
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
@@ -995,6 +1015,16 @@ def render_session_history_html(session_data):
   applyHideAiox(localStorage.getItem(HIDE_AIOX_STORAGE_KEY) === '1');
   document.getElementById('hide-aiox-toggle')?.addEventListener('change', (event) => {{
     applyHideAiox(Boolean(event.target.checked));
+  }});
+  function applyHideCliBoilerplate(enabled) {{
+    document.body.classList.toggle('hide-cli-boilerplate-enabled', enabled);
+    const hideCliBoilerplateToggle = document.getElementById('hide-cli-boilerplate-toggle');
+    if (hideCliBoilerplateToggle) hideCliBoilerplateToggle.checked = enabled;
+    localStorage.setItem(HIDE_CLI_BOILERPLATE_STORAGE_KEY, enabled ? '1' : '0');
+  }}
+  applyHideCliBoilerplate(localStorage.getItem(HIDE_CLI_BOILERPLATE_STORAGE_KEY) === '1');
+  document.getElementById('hide-cli-boilerplate-toggle')?.addEventListener('change', (event) => {{
+    applyHideCliBoilerplate(Boolean(event.target.checked));
   }});
   async function renameCurrentSession() {{
     const titleEl = document.getElementById('session-title');

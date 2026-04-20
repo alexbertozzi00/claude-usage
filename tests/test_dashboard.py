@@ -17,6 +17,7 @@ from dashboard import (
     get_dashboard_data,
     get_sessions_for_hour,
     get_session_history,
+    render_session_history_html,
     rename_session,
     DashboardHandler,
     HTML_TEMPLATE,
@@ -221,6 +222,33 @@ class TestTimestampFormatting(unittest.TestCase):
         )
 
         self.assertEqual(formatted, "19/04/2026 17:12:00")
+
+
+class TestSessionHistoryFilters(unittest.TestCase):
+    def test_renders_cli_boilerplate_filter_and_marks_entries(self):
+        html = render_session_history_html({
+            "session_id": "sess-cli-filter",
+            "custom_name": "",
+            "transcript_path": "/tmp/transcript.jsonl",
+            "entries": [
+                {
+                    "role": "assistant",
+                    "timestamp": "2026-04-20 10:00:00",
+                    "text": "Mensagem normal",
+                },
+                {
+                    "role": "assistant",
+                    "timestamp": "2026-04-20 10:01:00",
+                    "text": "<local-command-caveat> conteúdo interno",
+                },
+            ],
+        })
+
+        self.assertIn("id=\"hide-cli-boilerplate-toggle\"", html)
+        self.assertIn("Ocultar boilerplate CLI Claude", html)
+        self.assertIn("HIDE_CLI_BOILERPLATE_STORAGE_KEY", html)
+        self.assertIn("hide-cli-boilerplate-enabled", html)
+        self.assertIn("cli-boilerplate-message", html)
 
 
 class TestEfficiencyRanking(unittest.TestCase):
