@@ -72,6 +72,135 @@ HEADER_THEME_TOGGLE_HTML = """
 </label>
 """
 
+GLOBAL_LOADER_HTML = """
+<div id="global-loader" class="loader" aria-hidden="true">
+  <div class="bar1"></div>
+  <div class="bar2"></div>
+  <div class="bar3"></div>
+  <div class="bar4"></div>
+  <div class="bar5"></div>
+  <div class="bar6"></div>
+  <div class="bar7"></div>
+  <div class="bar8"></div>
+  <div class="bar9"></div>
+</div>
+"""
+
+GLOBAL_LOADER_CSS = """
+.global-loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.56);
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.global-loading-overlay.is-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+body.global-loading-active {
+  overflow: hidden;
+}
+
+.loader {
+  width: 45px;
+  height: 40px;
+  position: relative;
+}
+
+.loader div {
+  width: 5px;
+  height: 100%;
+  background: #4f8ef7;
+  position: absolute;
+  left: 0;
+  transform-origin: center;
+  animation: loaderFade 1.2s linear infinite;
+}
+
+.loader .bar1 { left: 0px; animation-delay: 0s; }
+.loader .bar2 { left: 5px; animation-delay: 0.1s; }
+.loader .bar3 { left: 10px; animation-delay: 0.2s; }
+.loader .bar4 { left: 15px; animation-delay: 0.3s; }
+.loader .bar5 { left: 20px; animation-delay: 0.4s; }
+.loader .bar6 { left: 25px; animation-delay: 0.5s; }
+.loader .bar7 { left: 30px; animation-delay: 0.6s; }
+.loader .bar8 { left: 35px; animation-delay: 0.7s; }
+.loader .bar9 { left: 40px; animation-delay: 0.8s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .global-loading-overlay {
+    transition: none;
+  }
+
+  .loader div {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+  }
+}
+
+@keyframes loaderFade {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scaleY(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+"""
+
+GLOBAL_NAVIGATION_LOADER_SCRIPT = """
+<script>
+(function initGlobalNavigationLoader() {
+  function showGlobalLoadingOverlay() {
+    if (typeof setGlobalLoading === 'function') {
+      setGlobalLoading(true);
+      return;
+    }
+    const overlay = document.getElementById('global-loading-overlay');
+    if (overlay) {
+      overlay.classList.add('is-visible');
+      overlay.setAttribute('aria-busy', 'true');
+    }
+    document.body?.classList.add('global-loading-active');
+  }
+
+  function shouldHandleNavigationClick(event, link) {
+    if (!link) return false;
+    if (event.defaultPrevented) return false;
+    if (event.button !== 0) return false;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    if (link.getAttribute('target') === '_blank') return false;
+
+    const href = (link.getAttribute('href') || '').trim();
+    if (!href || href === '/' || href.startsWith('#')) return false;
+
+    return href.startsWith('/');
+  }
+
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest("a[href^='/']");
+    if (!shouldHandleNavigationClick(event, link)) return;
+    showGlobalLoadingOverlay();
+  }, true);
+
+  window.addEventListener('beforeunload', () => {
+    showGlobalLoadingOverlay();
+  });
+})();
+</script>
+"""
+
 
 def _format_date(date_str):
     """Convert YYYY-MM-DD -> dd/MM/YYYY when possible."""
@@ -725,6 +854,7 @@ def render_session_history_html(session_data):
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>ClaudeFlow - Sessão</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -758,6 +888,9 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <div class="wrap">
   <h1>Histórico da Sessão</h1>
@@ -811,6 +944,7 @@ def render_session_history_html(session_data):
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>{escape(f"ClaudeFlow - {title_text}")}</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -932,6 +1066,9 @@ def render_session_history_html(session_data):
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <div class="wrap">
   <div class="panel">
@@ -1068,6 +1205,7 @@ def render_session_history_html(session_data):
   }}
   document.getElementById('session-rename-btn')?.addEventListener('click', renameCurrentSession);
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1089,6 +1227,7 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora</title>
   <style>
+{GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
       --bg: #0f1117;
       --card: #1a1d27;
@@ -1141,7 +1280,9 @@ def render_hour_sessions_html(data):
     #toggle:checked + svg #stars {{ opacity: 1; }}
   </style>
 </head>
-<body>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
+<body><div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>{header_html}<div class="wrap"><h1>Sessões por Hora</h1><p>{err}</p></div>{footer_html}
 <script>
   const THEME_STORAGE_KEY = 'claude_usage_theme';
   function getPreferredTheme() {{
@@ -1160,6 +1301,7 @@ def render_hour_sessions_html(data):
     applyTheme(event.target.checked ? 'dark' : 'light');
   }});
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1207,6 +1349,7 @@ def render_hour_sessions_html(data):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClaudeFlow - Sessões por Hora ({hour})</title>
   <style>
+{GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
       --bg: #0f1117;
       --card: #1a1d27;
@@ -1264,6 +1407,9 @@ def render_hour_sessions_html(data):
   </style>
 </head>
 <body>
+  <div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
   {header_html}
   <div class="wrap">
     <div class="meta">Atualizado em: {escape(data.get("generated_at") or "")}</div>
@@ -1301,6 +1447,7 @@ def render_hour_sessions_html(data):
     applyTheme(event.target.checked ? 'dark' : 'light');
   }});
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1321,6 +1468,7 @@ def render_ranking_help_html():
 <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
 <title>ClaudeFlow - Ajuda do Ranking</title>
 <style>
+{GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
     --bg: #0f1117;
     --card: #1a1d27;
@@ -1398,6 +1546,9 @@ def render_ranking_help_html():
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
 {header_html}
 <main class="wrap">
   <article class="panel">
@@ -1458,6 +1609,7 @@ def render_ranking_help_html():
   applyTheme(getInitialTheme());
   document.addEventListener('DOMContentLoaded', initThemeToggle);
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1471,6 +1623,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>ClaudeFlow - Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
+""" + GLOBAL_LOADER_CSS + r"""
   :root, [data-theme="dark"] {
     --bg: #0f1117;
     --card: #1a1d27;
@@ -1731,7 +1884,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .disclaimer-banner strong { color: var(--text); }
   .disclaimer-banner p { margin: 0; }
   .disclaimer-banner p + p { margin-top: 8px; }
-
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
   .footer-content p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 4px; }
@@ -1743,6 +1895,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+""" + GLOBAL_LOADER_HTML + r"""
+</div>
 <header>
   <h1><img class="logomarca" src="/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
   <div class="header-controls">
@@ -3528,6 +3683,7 @@ async function triggerRescan() {
   const btn = document.getElementById('rescan-btn');
   btn.disabled = true;
   btn.textContent = '\u21bb Escaneando...';
+  setGlobalLoading(true);
   try {
     const resp = await fetch('/api/rescan', { method: 'POST' });
     const d = await resp.json();
@@ -3536,12 +3692,41 @@ async function triggerRescan() {
   } catch(e) {
     btn.textContent = '\u21bb';
     console.error(e);
+    setGlobalLoading(false);
   }
   setTimeout(() => { btn.textContent = '\u21bb'; btn.disabled = false; }, 3000);
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
+function setGlobalLoading(visible) {
+  const overlay = document.getElementById('global-loading-overlay');
+  const isVisible = Boolean(visible);
+  if (isVisible) {
+    window.__globalLoadingStartedAt = Date.now();
+  }
+  if (overlay) {
+    overlay.classList.toggle('is-visible', isVisible);
+    overlay.setAttribute('aria-busy', isVisible ? 'true' : 'false');
+  }
+  document.body.classList.toggle('global-loading-active', isVisible);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function hideGlobalLoadingWithMinimumDelay() {
+  const minVisibleMs = 300;
+  const startedAt = window.__globalLoadingStartedAt || Date.now();
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs < minVisibleMs) {
+    await wait(minVisibleMs - elapsedMs);
+  }
+  setGlobalLoading(false);
+}
+
 async function loadData() {
+  setGlobalLoading(true);
   try {
     const resp = await fetch('/api/data');
     const d = await resp.json();
@@ -3571,7 +3756,10 @@ async function loadData() {
 
     applyFilter();
   } catch(e) {
+    document.body.innerHTML = '<div style="padding:40px;color:#f87171">Falha ao carregar dados do dashboard. Tente atualizar a página.</div>';
     console.error(e);
+  } finally {
+    await hideGlobalLoadingWithMinimumDelay();
   }
 }
 
@@ -3585,6 +3773,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadData();
 });
 </script>
+""" + GLOBAL_NAVIGATION_LOADER_SCRIPT + r"""
 </body>
 </html>
 """
