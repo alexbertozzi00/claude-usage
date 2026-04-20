@@ -19,11 +19,12 @@ from layout_components import build_app_footer_context, build_app_header_context
 from live_usage import capture_usage
 from aggregation import fetch_model_catalog
 from cli import calc_cost
+from src.backend.config import DB_PATH, HOST, PORT
+from src.backend.repositories.dashboard_repository import ensure_custom_name_column, ensure_has_tool_marker_column
+from src.backend.services.dashboard_service import compute_efficiency_rankings, rename_session as service_rename_session
+from src.backend.routes.dashboard_routes import handle_get, handle_post
 
 
-DB_PATH = Path.home() / ".claude" / "usage.db"
-MAX_CUSTOM_NAME_LENGTH = 80
-EFFICIENCY_OUTPUT_INPUT_CAP = 4.0
 TEMPLATES_DIR = Path(__file__).resolve().parent / "src" / "frontend" / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "src" / "frontend" / "static"
 LEGACY_IMAGES_DIR = Path(__file__).resolve().parent / "images"
@@ -125,129 +126,8 @@ def _display_project_name(project_name):
     return normalized.replace("\\", "/").split("/")[-1] or "unknown"
 
 
-def ensure_custom_name_column(conn):
-    try:
-        conn.execute("SELECT custom_name FROM sessions LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE sessions ADD COLUMN custom_name TEXT")
-        conn.commit()
-
-
-def ensure_has_tool_marker_column(conn):
-    try:
-        conn.execute("SELECT has_tool_marker FROM turns LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE turns ADD COLUMN has_tool_marker INTEGER DEFAULT 0")
-        conn.commit()
-
-
-def _clamp(value, low=0.0, high=100.0):
-    return max(low, min(high, value))
-
-
-def compute_efficiency_rankings(rows, top_n=None):
-    """Compute normalized efficiency score (0-100) for session/project rows."""
-    if not rows:
-        return []
-
-    prepared = []
-    for row in rows:
-        turns = max(0, int(row.get("turns") or 0))
-        input_tokens = max(0, float(row.get("input") or 0))
-        output_tokens = max(0, float(row.get("output") or 0))
-        cache_read = max(0, float(row.get("cache_read") or 0))
-        cache_creation = max(0, float(row.get("cache_creation") or 0))
-        cost = float(row.get("cost") or 0.0)
-        duration_min = max(0.0, float(row.get("duration_min") or 0.0))
-
-        output_input_ratio = output_tokens / input_tokens if input_tokens > 0 else 0.0
-        output_input_capped = min(output_input_ratio, EFFICIENCY_OUTPUT_INPUT_CAP)
-        cache_read_pct = (cache_read / input_tokens * 100.0) if input_tokens > 0 else 0.0
-        cost_per_turn = (cost / turns) if turns > 0 else 0.0
-        turns_per_min = (turns / duration_min) if duration_min > 0 else None
-
-        prepared.append({
-            **row,
-            "output_input_ratio": output_input_ratio,
-            "output_input_capped": output_input_capped,
-            "cache_read_pct": cache_read_pct,
-            "cost_per_turn": cost_per_turn,
-            "turns_per_min": turns_per_min,
-        })
-
-    max_cost_per_turn = max((r["cost_per_turn"] for r in prepared), default=0.0)
-    max_turns_per_min = max((r["turns_per_min"] or 0.0 for r in prepared), default=0.0)
-
-    ranking = []
-    for row in prepared:
-        output_input_score = _clamp((row["output_input_capped"] / EFFICIENCY_OUTPUT_INPUT_CAP) * 100.0)
-        cache_read_score = _clamp(row["cache_read_pct"])
-        if max_cost_per_turn <= 0:
-            cost_per_turn_score = 100.0
-        else:
-            cost_per_turn_score = _clamp((1.0 - (row["cost_per_turn"] / max_cost_per_turn)) * 100.0)
-
-        subscores = {
-            "output_input": round(output_input_score, 2),
-            "cache_read_pct": round(cache_read_score, 2),
-            "cost_per_turn": round(cost_per_turn_score, 2),
-        }
-
-        if row["turns_per_min"] is not None:
-            turns_per_min_score = 100.0 if max_turns_per_min <= 0 else _clamp((row["turns_per_min"] / max_turns_per_min) * 100.0)
-            subscores["turns_per_min"] = round(turns_per_min_score, 2)
-
-        score_total = round(sum(subscores.values()) / len(subscores), 2) if subscores else 0.0
-
-        ranking.append({
-            **row,
-            "score_total": score_total,
-            "subscores": subscores,
-        })
-
-    ranking.sort(key=lambda item: (-item["score_total"], -(item.get("turns") or 0), str(item.get("id") or item.get("project") or "")))
-    if top_n is None:
-        return ranking
-    return ranking[:top_n]
-
-
 def rename_session(session_id, custom_name, db_path=DB_PATH):
-    if not session_id:
-        return {"ok": False, "error": "session_id é obrigatório."}, 400
-
-    normalized = (custom_name or "").strip()
-    if len(normalized) > MAX_CUSTOM_NAME_LENGTH:
-        return {"ok": False, "error": f"custom_name deve ter no máximo {MAX_CUSTOM_NAME_LENGTH} caracteres."}, 400
-
-    if not db_path.exists():
-        return {"ok": False, "error": "Banco de dados não encontrado."}, 404
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        ensure_custom_name_column(conn)
-        existing = conn.execute(
-            "SELECT session_id FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if existing is None:
-            return {"ok": False, "error": "Sessão não encontrada."}, 404
-
-        value = normalized if normalized else None
-        conn.execute(
-            "UPDATE sessions SET custom_name = ? WHERE session_id = ?",
-            (value, session_id),
-        )
-        conn.commit()
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "custom_name": value,
-        }, 200
-    except sqlite3.Error as e:
-        return {"ok": False, "error": f"Erro ao renomear sessão: {e}"}, 500
-    finally:
-        conn.close()
+    return service_rename_session(session_id=session_id, custom_name=custom_name, db_path=db_path)
 
 
 def get_dashboard_data(db_path=DB_PATH, local_tz=None):
@@ -3886,80 +3766,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/index.html"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
-        elif parsed.path == "/api/data":
-            data = get_dashboard_data()
-            body = json.dumps(data).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/live-usage", "/live-usage/"):
-            body = LIVE_USAGE_HTML.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path == "/api/live-usage":
-            payload = json.dumps(asdict(capture_usage()), ensure_ascii=False).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-        elif parsed.path.startswith("/hour/"):
-            hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
-            qs = parse_qs(parsed.query or "")
-            cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
-            cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
-            models_raw = (qs.get("models", [""])[0] or "").strip()
-            models = [m.strip() for m in models_raw.split(",") if m.strip()]
-            data = get_sessions_for_hour(hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models)
-            body = render_hour_sessions_html(data).encode("utf-8")
-            status_code = 404 if "error" in data else 200
-            self.send_response(status_code)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path.startswith("/session/"):
-            session_id = unquote(parsed.path[len("/session/"):]).strip()
-            session_data = get_session_history(session_id)
-            body = render_session_history_html(session_data).encode("utf-8")
-            status_code = 404 if "error" in session_data else 200
-            self.send_response(status_code)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/ranking/help", "/help/ranking"):
-            body = render_ranking_help_html().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path in ("/trend/help", "/help/trend"):
-            body = render_trend_help_html().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path.startswith("/static/"):
-            self._serve_static(parsed.path)
-        elif parsed.path in ("/favicon.svg", "/favicon.ico", "/images/favicon.svg"):
-            self._serve_static("/static/images/favicon.svg")
-        elif parsed.path == "/images/logomarca.png":
-            self._serve_static("/static/images/logomarca.png")
-
-        else:
+        handled = handle_get(self, parsed, {
+            "HTML_TEMPLATE": HTML_TEMPLATE,
+            "LIVE_USAGE_HTML": LIVE_USAGE_HTML,
+            "get_dashboard_data": get_dashboard_data,
+            "get_sessions_for_hour": get_sessions_for_hour,
+            "get_session_history": get_session_history,
+            "render_hour_sessions_html": render_hour_sessions_html,
+            "render_session_history_html": render_session_history_html,
+            "render_ranking_help_html": render_ranking_help_html,
+            "render_trend_help_html": render_trend_help_html,
+            "parse_qs": parse_qs,
+        })
+        if not handled:
             self.send_response(404)
             self.end_headers()
 
@@ -4005,8 +3824,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/rescan":
-            # Full rebuild: delete DB and rescan from scratch
+        def _do_rescan():
             try:
                 if DB_PATH.exists():
                     DB_PATH.unlink()
@@ -4021,37 +3839,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "sessions": 0,
                     "error": str(e),
                 }
-            body = json.dumps(result).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif parsed.path == "/api/session/rename":
-            content_length = int(self.headers.get("Content-Length", "0") or "0")
-            body_raw = self.rfile.read(content_length) if content_length > 0 else b""
-            try:
-                payload = json.loads(body_raw.decode("utf-8") or "{}")
-            except json.JSONDecodeError:
-                payload = {}
-            result, status_code = rename_session(
-                session_id=(payload.get("session_id") or "").strip() if isinstance(payload, dict) else "",
-                custom_name=(payload.get("custom_name") if isinstance(payload, dict) else ""),
-            )
-            body = json.dumps(result).encode("utf-8")
-            self.send_response(status_code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        else:
+            return json.dumps(result).encode("utf-8")
+
+        handled = handle_post(self, parsed, {
+            "do_rescan": _do_rescan,
+            "rename_session": rename_session,
+        })
+        if not handled:
             self.send_response(404)
             self.end_headers()
 
 
 def serve(host=None, port=None):
-    host = host or os.environ.get("HOST", "localhost")
-    port = port or int(os.environ.get("PORT", "8082"))
+    host = host or HOST
+    port = port or PORT
     server = HTTPServer((host, port), DashboardHandler)
     print(f"Dashboard running at http://{host}:{port}")
     print("Press Ctrl+C to stop.")
