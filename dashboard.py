@@ -1539,7 +1539,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <path d="M8 5v14l11-7z"></path>
       </svg>
     </label>
-    <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos.">&#x21bb; Reescanear</button>
+    <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos." aria-label="Reescanear">&#x21bb;</button>
   </div>
 </header>
 
@@ -2848,13 +2848,13 @@ async function triggerRescan() {
   try {
     const resp = await fetch('/api/rescan', { method: 'POST' });
     const d = await resp.json();
-    btn.textContent = '\u21bb Reescanear (' + d.new + ' novos, ' + d.updated + ' atualizados)';
+    btn.textContent = '\u21bb';
     await loadData();
   } catch(e) {
-    btn.textContent = '\u21bb Reescanear (erro)';
+    btn.textContent = '\u21bb';
     console.error(e);
   }
-  setTimeout(() => { btn.textContent = '\u21bb Reescanear'; btn.disabled = false; }, 3000);
+  setTimeout(() => { btn.textContent = '\u21bb'; btn.disabled = false; }, 3000);
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
