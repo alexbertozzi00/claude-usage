@@ -1654,7 +1654,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </table>
   </div>
   <div class="table-card">
-    <div class="section-header"><div class="section-title">Sessões Recentes</div><button class="export-btn" onclick="exportSessionsCSV()" title="Exportar todas as sessões filtradas para CSV">&#x2913; CSV</button></div>
+    <div class="section-header"><div class="section-title">Sessões Recentes</div><div style="display:flex; gap:6px;"><button class="export-btn" onclick="exportDashboardJSON()" title="Exportar relatório filtrado em JSON">&#x2913; JSON</button><button class="export-btn" onclick="exportDashboardMarkdown()" title="Exportar relatório filtrado em Markdown">&#x2913; MD</button><button class="export-btn" onclick="exportSessionsCSV()" title="Exportar todas as sessões filtradas para CSV">&#x2913; CSV</button></div></div>
     <table>
       <thead><tr>
         <th>Sessão</th>
@@ -2912,6 +2912,229 @@ function downloadCSV(reportType, header, rows) {
   a.download = reportType + '_' + csvTimestamp() + '.csv';
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function downloadTextFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType || 'text/plain;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function isoDateAddDays(isoDate, deltaDays) {
+  const dt = new Date(isoDate + 'T00:00:00Z');
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
+}
+
+function resolveExportPeriod() {
+  const latestDay = getLatestDataDay() || new Date().toISOString().slice(0, 10);
+  const cutoff = getRangeCutoff(selectedRange);
+  let start = cutoff;
+  if (!start) {
+    const fromSessions = (rawData?.sessions_all || []).map(s => s.last_date).filter(Boolean);
+    const fromDaily = (rawData?.daily_by_model || []).map(r => r.day).filter(Boolean);
+    const allDays = fromSessions.concat(fromDaily);
+    start = allDays.length ? allDays.reduce((min, d) => (d < min ? d : min), allDays[0]) : latestDay;
+  }
+  const end = latestDay;
+  const dayCount = getRangeDayCount(cutoff);
+  const previousEnd = isoDateAddDays(start, -1);
+  const previousStart = isoDateAddDays(previousEnd, -(dayCount - 1));
+  return {
+    period: selectedRange,
+    days: dayCount,
+    current: { start, end },
+    previous: { start: previousStart, end: previousEnd },
+  };
+}
+
+function inDateRange(isoDate, start, end) {
+  return Boolean(isoDate) && isoDate >= start && isoDate <= end;
+}
+
+function aggregateWindow(start, end) {
+  const selected = selectedModels || new Set();
+  const daily = (rawData?.daily_by_model || []).filter(r =>
+    selected.has(r.model) && inDateRange(r.day, start, end)
+  );
+  const projectDaily = (rawData?.project_daily || []).filter(r =>
+    selected.has(r.model) && inDateRange(r.day, start, end)
+  );
+  const sessions = (rawData?.sessions_all || []).filter(s =>
+    selected.has(s.model) && inDateRange(s.last_date, start, end)
+  );
+
+  const byModel = {};
+  for (const row of daily) {
+    if (!byModel[row.model]) {
+      byModel[row.model] = {
+        model: row.model, sessions: 0, turns: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, estimated_cost_usd: 0,
+      };
+    }
+    const item = byModel[row.model];
+    item.turns += Number(row.turns || 0);
+    item.input_tokens += Number(row.input || 0);
+    item.output_tokens += Number(row.output || 0);
+    item.cache_read_tokens += Number(row.cache_read || 0);
+    item.cache_creation_tokens += Number(row.cache_creation || 0);
+    item.estimated_cost_usd += calcCost(row.model, Number(row.input || 0), Number(row.output || 0), Number(row.cache_read || 0), Number(row.cache_creation || 0));
+  }
+  for (const s of sessions) {
+    if (byModel[s.model]) byModel[s.model].sessions += 1;
+  }
+
+  const byProject = {};
+  for (const row of projectDaily) {
+    const key = row.project || 'unknown';
+    if (!byProject[key]) {
+      byProject[key] = {
+        project: key, sessions: 0, turns: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0,
+      };
+    }
+    const item = byProject[key];
+    item.turns += Number(row.turns || 0);
+    item.input_tokens += Number(row.input || 0);
+    item.output_tokens += Number(row.output || 0);
+    item.cache_read_tokens += Number(row.cache_read || 0);
+    item.cache_creation_tokens += Number(row.cache_creation || 0);
+  }
+  for (const s of sessions) {
+    const key = s.project || 'unknown';
+    if (byProject[key]) byProject[key].sessions += 1;
+  }
+
+  const topModels = Object.values(byModel)
+    .sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens))
+    .slice(0, 5)
+    .map(item => ({ ...item, estimated_cost_usd: Number(item.estimated_cost_usd.toFixed(6)) }));
+  const topProjects = Object.values(byProject)
+    .sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens))
+    .slice(0, 5);
+
+  const kpis = {
+    sessions: sessions.length,
+    turns: daily.reduce((acc, r) => acc + Number(r.turns || 0), 0),
+    input_tokens: daily.reduce((acc, r) => acc + Number(r.input || 0), 0),
+    output_tokens: daily.reduce((acc, r) => acc + Number(r.output || 0), 0),
+    cache_read_tokens: daily.reduce((acc, r) => acc + Number(r.cache_read || 0), 0),
+    cache_creation_tokens: daily.reduce((acc, r) => acc + Number(r.cache_creation || 0), 0),
+    estimated_cost_usd: Number(topModels.reduce((acc, m) => acc + Number(m.estimated_cost_usd || 0), 0).toFixed(6)),
+  };
+
+  return { kpis, topModels, topProjects };
+}
+
+function buildDashboardExportPayload() {
+  if (!rawData) return null;
+  const spec = resolveExportPeriod();
+  const current = aggregateWindow(spec.current.start, spec.current.end);
+  const previous = aggregateWindow(spec.previous.start, spec.previous.end);
+  const delta = {};
+  for (const key of ['sessions', 'turns', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens']) {
+    delta[key] = (current.kpis[key] || 0) - (previous.kpis[key] || 0);
+  }
+
+  const alerts = [];
+  if (current.kpis.sessions === 0) alerts.push('Nenhuma sessão no período selecionado.');
+  if (current.kpis.input_tokens > 0 && (current.kpis.output_tokens / current.kpis.input_tokens) > 1.0) {
+    alerts.push('Relação saída/entrada acima de 1.0: revise limites de verbosidade.');
+  }
+  if (current.kpis.input_tokens > 0 && (current.kpis.cache_read_tokens / current.kpis.input_tokens) < 0.15) {
+    alerts.push('Baixo reaproveitamento de cache: tente padronizar prompts recorrentes.');
+  }
+
+  return {
+    schema_version: '1.0.0',
+    generated_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    period: spec,
+    applied_filters: {
+      range: selectedRange,
+      models: Array.from(selectedModels),
+    },
+    kpis: current.kpis,
+    comparison_previous_period: {
+      kpis: previous.kpis,
+      delta,
+    },
+    top_models: current.topModels,
+    top_projects: current.topProjects,
+    alerts,
+  };
+}
+
+function renderDashboardMarkdown(payload) {
+  const period = payload.period.current;
+  const previous = payload.period.previous;
+  const kpis = payload.kpis;
+  const comp = payload.comparison_previous_period.delta;
+  const lines = [
+    `# Relatório de uso Claude Code (${period.start} até ${period.end})`,
+    '',
+    `Período anterior equivalente: ${previous.start} até ${previous.end}`,
+    '',
+    '## KPIs',
+    '',
+    `- Sessões: **${kpis.sessions}** (${comp.sessions >= 0 ? '+' : ''}${comp.sessions} vs período anterior)`,
+    `- Interações (turns): **${kpis.turns}** (${comp.turns >= 0 ? '+' : ''}${comp.turns} vs período anterior)`,
+    `- Tokens de entrada: **${kpis.input_tokens}** (${comp.input_tokens >= 0 ? '+' : ''}${comp.input_tokens})`,
+    `- Tokens de saída: **${kpis.output_tokens}** (${comp.output_tokens >= 0 ? '+' : ''}${comp.output_tokens})`,
+    `- Custo estimado: **$${Number(kpis.estimated_cost_usd || 0).toFixed(4)}**`,
+    '',
+    '## Top modelos',
+    '',
+    '| Modelo | Sessões | Turns | Input | Output | Custo (USD) |',
+    '|---|---:|---:|---:|---:|---:|',
+  ];
+
+  if (payload.top_models && payload.top_models.length) {
+    for (const item of payload.top_models) {
+      lines.push(`| ${item.model} | ${item.sessions} | ${item.turns} | ${item.input_tokens} | ${item.output_tokens} | ${Number(item.estimated_cost_usd || 0).toFixed(4)} |`);
+    }
+  } else {
+    lines.push('| (sem dados) | 0 | 0 | 0 | 0 | 0.0000 |');
+  }
+
+  lines.push('', '## Top projetos', '', '| Projeto | Sessões | Turns | Input | Output |', '|---|---:|---:|---:|---:|');
+  if (payload.top_projects && payload.top_projects.length) {
+    for (const item of payload.top_projects) {
+      lines.push(`| ${item.project} | ${item.sessions} | ${item.turns} | ${item.input_tokens} | ${item.output_tokens} |`);
+    }
+  } else {
+    lines.push('| (sem dados) | 0 | 0 | 0 | 0 |');
+  }
+  lines.push('', '## Alertas', '');
+  if (payload.alerts && payload.alerts.length) {
+    for (const alert of payload.alerts) lines.push(`- ${alert}`);
+  } else {
+    lines.push('- Nenhum alerta no período.');
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+function exportDashboardJSON() {
+  const payload = buildDashboardExportPayload();
+  if (!payload) {
+    toast('Sem dados para exportar.');
+    return;
+  }
+  const filename = `relatorio_uso_${payload.period.current.end}_${selectedRange}.json`;
+  downloadTextFile(JSON.stringify(payload, null, 2) + '\n', filename, 'application/json;charset=utf-8;');
+  toast('Exportação JSON concluída.');
+}
+
+function exportDashboardMarkdown() {
+  const payload = buildDashboardExportPayload();
+  if (!payload) {
+    toast('Sem dados para exportar.');
+    return;
+  }
+  const filename = `relatorio_uso_${payload.period.current.end}_${selectedRange}.md`;
+  downloadTextFile(renderDashboardMarkdown(payload), filename, 'text/markdown;charset=utf-8;');
+  toast('Exportação Markdown concluída.');
 }
 
 function exportSessionsCSV() {
