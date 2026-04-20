@@ -476,9 +476,9 @@ class TestDashboardHTTP(unittest.TestCase):
         self.assertIn("Como interpretar este ranking", HTML_TEMPLATE)
 
     def test_template_mentions_hourly_activity_explanation(self):
-        self.assertIn("Atividade por Hora", HTML_TEMPLATE)
+        self.assertIn("Atividades/Interações por hora", HTML_TEMPLATE)
         self.assertIn("média de tokens", HTML_TEMPLATE)
-        self.assertIn("Ajuda sobre atividade por hora", HTML_TEMPLATE)
+        self.assertIn("Ajuda sobre atividades e interações por hora", HTML_TEMPLATE)
         self.assertIn("chart-title-row", HTML_TEMPLATE)
         self.assertIn("/hour/", HTML_TEMPLATE)
 

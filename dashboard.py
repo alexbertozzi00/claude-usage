@@ -2182,7 +2182,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap"><canvas id="chart-project"></canvas></div>
     </div>
     <div class="chart-card wide">
-      <h2 class="chart-title-row"><span>Atividade por Hora</span><span class="tooltip" tabindex="0" aria-label="Ajuda sobre atividade por hora">?<span class="tooltip-text">Cada linha representa um horário (00:00–23:00) dentro do período filtrado. A barra indica a média de tokens (entrada + saída) por dia naquele horário, e o valor à direita mostra interações totais e média diária.</span></span></h2>
+      <h2 class="chart-title-row"><span>Atividades/Interações por hora</span><span class="tooltip" tabindex="0" aria-label="Ajuda sobre atividades e interações por hora">?<span class="tooltip-text">Este painel resume, por horário (00:00–23:00), quando seu uso acontece no período filtrado. Cada barra mostra a média de tokens (entrada + saída) por dia naquele horário, e o valor à direita mostra as interações totais e a média diária.</span></span></h2>
       <div id="hourly-activity-meta" class="hourly-meta"></div>
       <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
