@@ -1390,6 +1390,7 @@ def render_hour_sessions_html(data):
 {COMMON_LAYOUT_STYLES}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background:var(--bg); color:var(--text); }}
     .wrap {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+    .table-card {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; overflow-x: auto; }}
     .meta {{ color:var(--muted); margin-bottom: 12px; }}
     a {{ color:var(--link); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
@@ -1433,21 +1434,23 @@ def render_hour_sessions_html(data):
 </div>
   {header_html}
   <div class="wrap">
-    <div class="meta">Atualizado em: {escape(data.get("generated_at") or "")}</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Sessão</th>
-          <th>Projeto</th>
-          <th>Modelo</th>
-          <th>Interações no horário</th>
-          <th>Entrada</th>
-          <th>Saída</th>
-          <th>Última atividade</th>
-        </tr>
-      </thead>
-      <tbody>{table_rows}</tbody>
-    </table>
+    <div class="table-card">
+      <div class="meta">Atualizado em: {escape(data.get("generated_at") or "")}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Sessão</th>
+            <th>Projeto</th>
+            <th>Modelo</th>
+            <th>Interações no horário</th>
+            <th>Entrada</th>
+            <th>Saída</th>
+            <th>Última atividade</th>
+          </tr>
+        </thead>
+        <tbody>{table_rows}</tbody>
+      </table>
+    </div>
   </div>
   {footer_html}
 <script>
