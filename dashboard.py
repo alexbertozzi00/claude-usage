@@ -372,6 +372,8 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
             duration_min = round((t2 - t1).total_seconds() / 60, 1)
         except Exception:
             duration_min = 0
+        last_local_dt = _to_local_datetime(r["last_timestamp"], local_tz=local_tz)
+        last_local_date = last_local_dt.strftime("%Y-%m-%d") if last_local_dt else (r["last_timestamp"] or "")[:10]
         model = r["model"] or "unknown"
         project = _display_project_name(r["project_name"])
         input_tokens = r["total_input_tokens"] or 0
@@ -387,7 +389,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
             "project":       project,
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
-            "last_date":     (r["last_timestamp"] or "")[:10],
+            "last_date":     last_local_date,
             "last_iso":      r["last_timestamp"] or "",
             "duration_min":  duration_min,
             "model":         model,
