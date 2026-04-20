@@ -1804,7 +1804,7 @@ const SESSIONS_PAGE_SIZE = 15;
 let rankingSessionsPage = 1;
 const RANKING_SESSIONS_PAGE_SIZE = 15;
 const renamingSessions = new Set();
-const AUTO_REFRESH_INTERVAL_MS = 30000;
+const AUTO_REFRESH_INTERVAL_MS = 40000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
 const AUTO_REFRESH_STORAGE_KEY = 'ccu:autoRefreshPaused';
 const MAX_CUSTOM_NAME_LENGTH = 80;
@@ -1880,7 +1880,7 @@ function startAutoRefreshCountdown() {
 function startAutoRefreshPolling() {
   setInterval(() => {
     if (isAutoRefreshPaused) return;
-    loadData();
+    triggerRescan();
   }, AUTO_REFRESH_INTERVAL_MS);
 }
 
