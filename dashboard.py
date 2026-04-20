@@ -2954,6 +2954,13 @@ function scoreClass(score) {
   return 'score-poor';
 }
 
+function scoreLabel(score) {
+  if (score >= 75) return 'Excelente';
+  if (score >= 70) return 'Bom';
+  if (score >= 65) return 'Médio';
+  return 'Ruim';
+}
+
 function renderEfficiencySessionRanking(rankingSessions) {
   const body = document.getElementById('ranking-sessions-body');
   if (!body) return;
@@ -2968,7 +2975,7 @@ function renderEfficiencySessionRanking(rankingSessions) {
     <tr>
       <td class="muted" style="font-family:monospace">${sessionCell}</td>
       <td>${esc(item.project || '-')}</td>
-      <td class="num"><strong class="${scoreClass(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
+      <td class="num"><strong class="${scoreClass(item.score_total)}" title="${scoreLabel(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
       <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}${item.subscores.turns_per_min !== undefined ? ` · TPM ${item.subscores.turns_per_min.toFixed(1)}` : ''}</td>
       <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
       <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
@@ -2985,7 +2992,7 @@ function renderEfficiencyProjectRanking(rankingProjects) {
   body.innerHTML = (rankingProjects || []).map(item => `
     <tr>
       <td>${esc(item.project || item.id || '-')}</td>
-      <td class="num"><strong class="${scoreClass(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
+      <td class="num"><strong class="${scoreClass(item.score_total)}" title="${scoreLabel(item.score_total)}">${item.score_total.toFixed(2)}</strong></td>
       <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}</td>
       <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
       <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
