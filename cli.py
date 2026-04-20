@@ -607,7 +607,7 @@ def cmd_dashboard(projects_dir=None):
     from dashboard import serve
 
     host = os.environ.get("HOST", "localhost")
-    port = int(os.environ.get("PORT", "8080"))
+    port = int(os.environ.get("PORT", "8082"))
 
     def open_browser():
         time.sleep(1.0)
