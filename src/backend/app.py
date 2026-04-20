@@ -9,7 +9,7 @@ from src.backend.config import HOST, PORT
 
 def run_dashboard(projects_dir=None, open_browser=True):
     from cli import cmd_scan
-    from dashboard import serve
+    from src.backend.dashboard import serve
 
     print("Running scan first...")
     cmd_scan(projects_dir=projects_dir)

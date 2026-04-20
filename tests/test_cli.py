@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from cli import get_pricing, calc_cost, fmt, fmt_cost, fmt_date, fmt_timestamp, PRICING
 from cli import build_insights
-from scanner import get_db, init_db, upsert_sessions, insert_turns
+from src.backend.scanner import get_db, init_db, upsert_sessions, insert_turns
 
 
 class TestGetPricing(unittest.TestCase):

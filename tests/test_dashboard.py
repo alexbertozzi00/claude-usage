@@ -11,8 +11,8 @@ from datetime import timezone, timedelta
 from unittest.mock import patch
 from pathlib import Path
 
-from scanner import get_db, init_db, upsert_sessions, insert_turns
-from dashboard import (
+from src.backend.scanner import get_db, init_db, upsert_sessions, insert_turns
+from src.backend.dashboard import (
     compute_efficiency_rankings,
     get_dashboard_data,
     get_sessions_for_hour,

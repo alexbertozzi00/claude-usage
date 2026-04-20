@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scanner import (
+from src.backend.scanner import (
     get_db, init_db, project_name_from_cwd, parse_jsonl_file,
     aggregate_sessions, upsert_sessions, insert_turns, scan,
 )
@@ -323,7 +323,7 @@ class TestMessageIdDedupIntegration(unittest.TestCase):
         conn.close()
 
         # init_db should add missing columns
-        from scanner import get_db, init_db
+        from src.backend.scanner import get_db, init_db
         conn = get_db(self.db_path)
         init_db(conn)
         # Verify column exists

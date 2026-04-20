@@ -16,7 +16,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, date
 
-from aggregation import (
+from src.backend.aggregation import (
     SCHEMA_VERSION,
     parse_period_spec,
     fetch_period_summary,
@@ -107,7 +107,7 @@ def require_db():
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_scan(projects_dir=None):
-    from scanner import scan
+    from src.backend.scanner import scan
     scan(projects_dir=Path(projects_dir) if projects_dir else None)
 
 
@@ -601,7 +601,7 @@ def cmd_dashboard(projects_dir=None):
 
 
 def cmd_live_usage():
-    from live_usage import serve_live_usage
+    from src.backend.live_usage import serve_live_usage
 
     serve_live_usage()
 

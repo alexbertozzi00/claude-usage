@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 
-from live_usage import capture_usage
+from src.backend.live_usage import capture_usage
 
 
 def handle_live_usage_get(handler, parsed, deps):
