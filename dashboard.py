@@ -774,7 +774,9 @@ def render_session_history_html(session_data):
         text = escape(raw_text)
         raw_text_lower = raw_text.lower()
         tool_marker_class = " tool-message" if "[tool_" in raw_text_lower else ""
-        aiox_marker_class = " aiox-message" if "ACTIVATION-NOTICE:" in raw_text else ""
+        aiox_marker_class = " aiox-message" if (
+            "ACTIVATION-NOTICE:" in raw_text or "<command-message>aiox" in raw_text_lower
+        ) else ""
         cli_boilerplate_marker_class = " cli-boilerplate-message" if any(
             marker in raw_text_lower for marker in (
                 "<local-command-caveat>",
