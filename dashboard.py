@@ -143,6 +143,46 @@ GLOBAL_LOADER_CSS = """
 }
 """
 
+GLOBAL_NAVIGATION_LOADER_SCRIPT = """
+<script>
+(function initGlobalNavigationLoader() {
+  function showGlobalLoadingOverlay() {
+    if (typeof setGlobalLoading === 'function') {
+      setGlobalLoading(true);
+      return;
+    }
+    const overlay = document.getElementById('global-loading-overlay');
+    if (overlay) {
+      overlay.classList.add('is-visible');
+    }
+  }
+
+  function shouldHandleNavigationClick(event, link) {
+    if (!link) return false;
+    if (event.defaultPrevented) return false;
+    if (event.button !== 0) return false;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    if (link.getAttribute('target') === '_blank') return false;
+
+    const href = (link.getAttribute('href') || '').trim();
+    if (!href || href === '/' || href.startsWith('#')) return false;
+
+    return href.startsWith('/');
+  }
+
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest("a[href^='/']");
+    if (!shouldHandleNavigationClick(event, link)) return;
+    showGlobalLoadingOverlay();
+  }, true);
+
+  window.addEventListener('beforeunload', () => {
+    showGlobalLoadingOverlay();
+  });
+})();
+</script>
+"""
+
 
 def _format_date(date_str):
     """Convert YYYY-MM-DD -> dd/MM/YYYY when possible."""
@@ -1145,6 +1185,7 @@ def render_session_history_html(session_data):
   }}
   document.getElementById('session-rename-btn')?.addEventListener('click', renameCurrentSession);
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1240,6 +1281,7 @@ def render_hour_sessions_html(data):
     applyTheme(event.target.checked ? 'dark' : 'light');
   }});
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1385,6 +1427,7 @@ def render_hour_sessions_html(data):
     applyTheme(event.target.checked ? 'dark' : 'light');
   }});
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -1516,6 +1559,7 @@ def render_ranking_help_html():
   applyTheme(getInitialTheme());
   document.addEventListener('DOMContentLoaded', initThemeToggle);
 </script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
 </body>
 </html>"""
 
@@ -3675,6 +3719,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadData();
 });
 </script>
+""" + GLOBAL_NAVIGATION_LOADER_SCRIPT + r"""
 </body>
 </html>
 """
