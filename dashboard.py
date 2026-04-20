@@ -1360,6 +1360,36 @@ def render_ranking_help_html():
   .metric-card p {{ margin-bottom: 0; }}
   a {{ color: var(--link); text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
+  #theme-toggle-button {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+  }}
+  #theme-toggle-button svg {{ display: block; width: 48px; height: 30px; }}
+  #toggle {{ display: none; }}
+  #container,
+  #button,
+  #sun,
+  #moon,
+  #cloud,
+  #stars {{ transition: all .4s ease; }}
+  #toggle:checked + svg #container {{ fill: #2b4360; }}
+  #toggle:checked + svg #button {{ transform: translate(28px, 2.333px); }}
+  #sun {{ opacity: 1; }}
+  #toggle:checked + svg #sun {{ opacity: 0; }}
+  #moon {{ opacity: 0; }}
+  #toggle:checked + svg #moon {{ opacity: 1; }}
+  #cloud {{ opacity: 1; }}
+  #toggle:checked + svg #cloud {{ opacity: 0; }}
+  #stars {{ opacity: 0; }}
+  #toggle:checked + svg #stars {{ opacity: 1; }}
   @media (min-width: 860px) {{
     .metric-grid {{ grid-template-columns: 1fr 1fr; }}
   }}
