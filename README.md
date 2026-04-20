@@ -138,6 +138,31 @@ Os custos são calculados com base nos **preços de API da Anthropic em abril de
 
 > **Observação:** Estes são preços de API. Se você usa Claude Code via assinatura Max ou Pro, sua estrutura de custo real é diferente (assinatura, não por token).
 
+## Ranking de eficiência (sessões e projetos)
+
+O dashboard também exibe um **score heurístico de eficiência (0–100)** para ranquear sessões e projetos no contexto dos filtros ativos.
+
+### Definição do score
+
+Cada item recebe subindicadores normalizados para 0–100:
+
+- **Output/Input**: relação `output_tokens / input_tokens`, com teto de 4.0x para reduzir outliers.
+- **% Cache read**: relação `cache_read_tokens / input_tokens`.
+- **Cost/turn (invertido)**: quanto menor o custo médio por interação, maior o subscore.
+- **Turns/min (opcional)**: incluído apenas quando há duração válida de sessão.
+
+O **score total** é a média simples dos subscores disponíveis.
+
+### Interpretação prática
+
+- **Quanto maior, melhor**: em geral indica melhor equilíbrio entre reutilização de cache, custo por interação e rendimento de saída.
+- O ranking é relativo ao recorte atual (período + modelos selecionados).
+
+### Limitações
+
+- O score é **heurístico**: útil para comparação operacional rápida, mas **não representa uma verdade absoluta**.
+- Projetos e sessões com perfis muito diferentes podem exigir interpretação contextual (qualidade da resposta, complexidade da tarefa, etc.).
+
 ---
 
 ## Arquivos

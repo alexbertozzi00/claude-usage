@@ -16,12 +16,16 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from layout_components import render_app_footer, render_app_header
 from aggregation import fetch_model_catalog
+from cli import calc_cost
+
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
 FAVICON_PATH = IMAGES_DIR / "favicon.svg"
 LOGOMARCA_PATH = IMAGES_DIR / "logomarca.png"
 MAX_CUSTOM_NAME_LENGTH = 80
+EFFICIENCY_OUTPUT_INPUT_CAP = 4.0
+EFFICIENCY_TOP_N = 10
 
 COMMON_LAYOUT_STYLES = """
   .app-header {
@@ -147,6 +151,74 @@ def ensure_has_tool_marker_column(conn):
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE turns ADD COLUMN has_tool_marker INTEGER DEFAULT 0")
         conn.commit()
+
+
+def _clamp(value, low=0.0, high=100.0):
+    return max(low, min(high, value))
+
+
+def compute_efficiency_rankings(rows, top_n=EFFICIENCY_TOP_N):
+    """Compute normalized efficiency score (0-100) for session/project rows."""
+    if not rows:
+        return []
+
+    prepared = []
+    for row in rows:
+        turns = max(0, int(row.get("turns") or 0))
+        input_tokens = max(0, float(row.get("input") or 0))
+        output_tokens = max(0, float(row.get("output") or 0))
+        cache_read = max(0, float(row.get("cache_read") or 0))
+        cache_creation = max(0, float(row.get("cache_creation") or 0))
+        cost = float(row.get("cost") or 0.0)
+        duration_min = max(0.0, float(row.get("duration_min") or 0.0))
+
+        output_input_ratio = output_tokens / input_tokens if input_tokens > 0 else 0.0
+        output_input_capped = min(output_input_ratio, EFFICIENCY_OUTPUT_INPUT_CAP)
+        cache_read_pct = (cache_read / input_tokens * 100.0) if input_tokens > 0 else 0.0
+        cost_per_turn = (cost / turns) if turns > 0 else 0.0
+        turns_per_min = (turns / duration_min) if duration_min > 0 else None
+
+        prepared.append({
+            **row,
+            "output_input_ratio": output_input_ratio,
+            "output_input_capped": output_input_capped,
+            "cache_read_pct": cache_read_pct,
+            "cost_per_turn": cost_per_turn,
+            "turns_per_min": turns_per_min,
+        })
+
+    max_cost_per_turn = max((r["cost_per_turn"] for r in prepared), default=0.0)
+    max_turns_per_min = max((r["turns_per_min"] or 0.0 for r in prepared), default=0.0)
+
+    ranking = []
+    for row in prepared:
+        output_input_score = _clamp((row["output_input_capped"] / EFFICIENCY_OUTPUT_INPUT_CAP) * 100.0)
+        cache_read_score = _clamp(row["cache_read_pct"])
+        if max_cost_per_turn <= 0:
+            cost_per_turn_score = 100.0
+        else:
+            cost_per_turn_score = _clamp((1.0 - (row["cost_per_turn"] / max_cost_per_turn)) * 100.0)
+
+        subscores = {
+            "output_input": round(output_input_score, 2),
+            "cache_read_pct": round(cache_read_score, 2),
+            "cost_per_turn": round(cost_per_turn_score, 2),
+        }
+
+        if row["turns_per_min"] is not None:
+            turns_per_min_score = 100.0 if max_turns_per_min <= 0 else _clamp((row["turns_per_min"] / max_turns_per_min) * 100.0)
+            subscores["turns_per_min"] = round(turns_per_min_score, 2)
+
+        score_total = round(sum(subscores.values()) / len(subscores), 2) if subscores else 0.0
+
+        ranking.append({
+            **row,
+            "score_total": score_total,
+            "subscores": subscores,
+        })
+
+    ranking.sort(key=lambda item: (-item["score_total"], -(item.get("turns") or 0), str(item.get("id") or item.get("project") or "")))
+    return ranking[:top_n]
 
 
 def rename_session(session_id, custom_name, db_path=DB_PATH):
@@ -292,6 +364,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     """).fetchall()
 
     sessions_all = []
+    project_totals = {}
     for r in session_rows:
         try:
             t1 = datetime.fromisoformat(r["first_timestamp"].replace("Z", "+00:00"))
@@ -299,22 +372,73 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
             duration_min = round((t2 - t1).total_seconds() / 60, 1)
         except Exception:
             duration_min = 0
+        model = r["model"] or "unknown"
+        project = _display_project_name(r["project_name"])
+        input_tokens = r["total_input_tokens"] or 0
+        output_tokens = r["total_output_tokens"] or 0
+        cache_read = r["total_cache_read"] or 0
+        cache_creation = r["total_cache_creation"] or 0
+        turns = r["turn_count"] or 0
+        cost = calc_cost(model, input_tokens, output_tokens, cache_read, cache_creation)
+
         sessions_all.append({
             "session_id":    r["session_id"][:8],
             "session_id_full": r["session_id"],
-            "project":       _display_project_name(r["project_name"]),
+            "project":       project,
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
             "last_date":     (r["last_timestamp"] or "")[:10],
             "last_iso":      r["last_timestamp"] or "",
             "duration_min":  duration_min,
-            "model":         r["model"] or "unknown",
-            "turns":         r["turn_count"] or 0,
-            "input":         r["total_input_tokens"] or 0,
-            "output":        r["total_output_tokens"] or 0,
-            "cache_read":    r["total_cache_read"] or 0,
-            "cache_creation": r["total_cache_creation"] or 0,
+            "model":         model,
+            "turns":         turns,
+            "input":         input_tokens,
+            "output":        output_tokens,
+            "cache_read":    cache_read,
+            "cache_creation": cache_creation,
+            "cost":          cost,
         })
+
+        if project not in project_totals:
+            project_totals[project] = {
+                "project": project,
+                "input": 0,
+                "output": 0,
+                "cache_read": 0,
+                "cache_creation": 0,
+                "turns": 0,
+                "duration_min": 0.0,
+                "sessions": 0,
+                "cost": 0.0,
+            }
+        proj = project_totals[project]
+        proj["input"] += input_tokens
+        proj["output"] += output_tokens
+        proj["cache_read"] += cache_read
+        proj["cache_creation"] += cache_creation
+        proj["turns"] += turns
+        proj["duration_min"] += duration_min
+        proj["sessions"] += 1
+        proj["cost"] += cost
+
+    session_ranking_rows = [
+        {
+            "id": s["session_id_full"],
+            "label": s["custom_name"] or s["session_id"],
+            "project": s["project"],
+            "model": s["model"],
+            "turns": s["turns"],
+            "input": s["input"],
+            "output": s["output"],
+            "cache_read": s["cache_read"],
+            "cache_creation": s["cache_creation"],
+            "duration_min": s["duration_min"],
+            "cost": s["cost"],
+        }
+        for s in sessions_all
+    ]
+    ranking_sessions = compute_efficiency_rankings(session_ranking_rows)
+    ranking_projects = compute_efficiency_rankings(list(project_totals.values()))
 
     conn.close()
 
@@ -324,6 +448,8 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         "hourly_by_model": hourly_by_model,
         "project_daily":  project_daily,
         "sessions_all":   sessions_all,
+        "ranking_sessions": ranking_sessions,
+        "ranking_projects": ranking_projects,
         "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
 
@@ -1514,6 +1640,37 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </table>
     <div id="project-cost-summary" class="table-footer"></div>
   </div>
+  <div class="table-card">
+    <div class="section-title">Ranking de Eficiência por Sessão</div>
+    <table>
+      <thead><tr>
+        <th>Sessão</th>
+        <th>Projeto</th>
+        <th>Score total</th>
+        <th>Subscores</th>
+        <th>Custo/turn</th>
+        <th>Output/Input</th>
+        <th>Cache%</th>
+        <th>Interações</th>
+      </tr></thead>
+      <tbody id="ranking-sessions-body"></tbody>
+    </table>
+  </div>
+  <div class="table-card">
+    <div class="section-title">Ranking de Eficiência por Projeto</div>
+    <table>
+      <thead><tr>
+        <th>Projeto</th>
+        <th>Score total</th>
+        <th>Subscores</th>
+        <th>Custo/turn</th>
+        <th>Output/Input</th>
+        <th>Cache%</th>
+        <th>Interações</th>
+      </tr></thead>
+      <tbody id="ranking-projects-body"></tbody>
+    </table>
+  </div>
 </div>
 
 <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -1659,6 +1816,8 @@ const PRICING = {
   'claude-haiku-4-5':  { input:  1.00, output:  5.00, cache_write:  1.25, cache_read: 0.10 },
   'claude-haiku-4-6':  { input:  1.00, output:  5.00, cache_write:  1.25, cache_read: 0.10 },
 };
+const EFFICIENCY_OUTPUT_INPUT_CAP = 4.0;
+const EFFICIENCY_TOP_N = 10;
 
 function isBillable(model) {
   if (!model) return false;
@@ -1689,6 +1848,52 @@ function calcCost(model, inp, out, cacheRead, cacheCreation) {
     cacheRead     * p.cache_read  / 1e6 +
     cacheCreation * p.cache_write / 1e6
   );
+}
+
+function clamp(value, low = 0, high = 100) {
+  return Math.max(low, Math.min(high, value));
+}
+
+function computeEfficiencyRankings(rows, topN = EFFICIENCY_TOP_N) {
+  if (!rows || !rows.length) return [];
+  const prepared = rows.map(row => {
+    const turns = Math.max(0, Number(row.turns || 0));
+    const input = Math.max(0, Number(row.input || 0));
+    const output = Math.max(0, Number(row.output || 0));
+    const cacheRead = Math.max(0, Number(row.cache_read || 0));
+    const durationMin = Math.max(0, Number(row.duration_min || 0));
+    const cost = Number(row.cost ?? calcCost(row.model, input, output, cacheRead, Number(row.cache_creation || 0)));
+    const outputInputRatio = input > 0 ? output / input : 0;
+    const outputInputCapped = Math.min(outputInputRatio, EFFICIENCY_OUTPUT_INPUT_CAP);
+    const cacheReadPct = input > 0 ? (cacheRead / input) * 100 : 0;
+    const costPerTurn = turns > 0 ? cost / turns : 0;
+    const turnsPerMin = durationMin > 0 ? turns / durationMin : null;
+    return { ...row, turns, outputInputRatio, outputInputCapped, cacheReadPct, costPerTurn, turnsPerMin };
+  });
+
+  const maxCostPerTurn = Math.max(...prepared.map(r => r.costPerTurn), 0);
+  const maxTurnsPerMin = Math.max(...prepared.map(r => r.turnsPerMin || 0), 0);
+
+  const ranking = prepared.map(row => {
+    const subscores = {
+      output_input: Number(clamp((row.outputInputCapped / EFFICIENCY_OUTPUT_INPUT_CAP) * 100).toFixed(2)),
+      cache_read_pct: Number(clamp(row.cacheReadPct).toFixed(2)),
+      cost_per_turn: Number((maxCostPerTurn <= 0 ? 100 : clamp((1 - (row.costPerTurn / maxCostPerTurn)) * 100)).toFixed(2)),
+    };
+    if (row.turnsPerMin !== null) {
+      subscores.turns_per_min = Number((maxTurnsPerMin <= 0 ? 100 : clamp((row.turnsPerMin / maxTurnsPerMin) * 100)).toFixed(2));
+    }
+    const values = Object.values(subscores);
+    const scoreTotal = Number(((values.reduce((sum, val) => sum + val, 0)) / (values.length || 1)).toFixed(2));
+    return { ...row, subscores, score_total: scoreTotal };
+  });
+
+  ranking.sort((a, b) => {
+    if (b.score_total !== a.score_total) return b.score_total - a.score_total;
+    if (b.turns !== a.turns) return b.turns - a.turns;
+    return String(a.id || a.project || '').localeCompare(String(b.id || b.project || ''));
+  });
+  return ranking.slice(0, topN);
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
@@ -2081,6 +2286,31 @@ function applyFilter() {
   }
   const byProject = Object.values(projMap).sort((a, b) => (b.input + b.output) - (a.input + a.output));
 
+  const rankingSessions = computeEfficiencyRankings(filteredSessions.map(s => ({
+    id: s.session_id_full,
+    label: s.custom_name || s.session_id,
+    project: s.project,
+    model: s.model,
+    turns: s.turns,
+    input: s.input,
+    output: s.output,
+    cache_read: s.cache_read,
+    cache_creation: s.cache_creation,
+    duration_min: s.duration_min,
+    cost: calcCost(s.model, s.input, s.output, s.cache_read, s.cache_creation),
+  })));
+  const rankingProjects = computeEfficiencyRankings(byProject.map(p => ({
+    id: p.project,
+    project: p.project,
+    turns: p.turns,
+    input: p.input,
+    output: p.output,
+    cache_read: p.cache_read,
+    cache_creation: p.cache_creation,
+    duration_min: 0,
+    cost: p.cost,
+  })));
+
   // Totals
   const totals = {
     sessions:       filteredSessions.length,
@@ -2122,8 +2352,9 @@ function applyFilter() {
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
-  renderProjectCostTable(lastByProject);
-  renderProjectCostSummary(lastByProject);
+  renderProjectCostTable(lastByProject.slice(0, 20));
+  renderEfficiencySessionRanking(rankingSessions);
+  renderEfficiencyProjectRanking(rankingProjects);
 }
 
 // ── Renderers ──────────────────────────────────────────────────────────────
@@ -2553,11 +2784,37 @@ function renderProjectCostTable(byProject) {
   }).join('');
 }
 
-function renderProjectCostSummary(allProjects) {
-  const summaryEl = document.getElementById('project-cost-summary');
-  if (!summaryEl) return;
-  const totalCost = allProjects.reduce((sum, p) => sum + (p.cost || 0), 0);
-  summaryEl.textContent = `Total de ${allProjects.length} projetos no filtro atual. Soma da tabela: ${fmtCost(totalCost)}.`;
+function renderEfficiencySessionRanking(rankingSessions) {
+  const body = document.getElementById('ranking-sessions-body');
+  if (!body) return;
+  body.innerHTML = (rankingSessions || []).map(item => `
+    <tr>
+      <td class="muted" style="font-family:monospace">${esc(item.label || item.id || '')}</td>
+      <td>${esc(item.project || '-')}</td>
+      <td class="num"><strong>${item.score_total.toFixed(2)}</strong></td>
+      <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}${item.subscores.turns_per_min !== undefined ? ` · TPM ${item.subscores.turns_per_min.toFixed(1)}` : ''}</td>
+      <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
+      <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
+      <td class="num">${fmtPct(item.cacheReadPct || 0)}</td>
+      <td class="num">${fmt(item.turns || 0)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderEfficiencyProjectRanking(rankingProjects) {
+  const body = document.getElementById('ranking-projects-body');
+  if (!body) return;
+  body.innerHTML = (rankingProjects || []).map(item => `
+    <tr>
+      <td>${esc(item.project || item.id || '-')}</td>
+      <td class="num"><strong>${item.score_total.toFixed(2)}</strong></td>
+      <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}</td>
+      <td class="cost">${fmtCost(item.costPerTurn || 0)}</td>
+      <td class="num">${(item.outputInputRatio || 0).toFixed(2)}x</td>
+      <td class="num">${fmtPct(item.cacheReadPct || 0)}</td>
+      <td class="num">${fmt(item.turns || 0)}</td>
+    </tr>
+  `).join('');
 }
 
 // ── CSV Export ────────────────────────────────────────────────────────────
