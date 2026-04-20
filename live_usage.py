@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import re
 import select
 import subprocess
@@ -74,6 +73,17 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
 
 
 def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
+    if os.name == "nt":
+        return UsageSnapshot(
+            ok=False,
+            captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            current_session=UsageBlock(),
+            current_week=UsageBlock(),
+            error="Live usage não é suportado no Windows (requer PTY/termios).",
+        )
+
+    import pty
+
     master_fd, slave_fd = pty.openpty()
 
     try:
