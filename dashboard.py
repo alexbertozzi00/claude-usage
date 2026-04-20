@@ -15,6 +15,7 @@ from collections import defaultdict
 from urllib.parse import parse_qs, unquote, urlparse
 
 from layout_components import render_app_footer, render_app_header
+from aggregation import fetch_model_catalog
 
 DB_PATH = Path.home() / ".claude" / "usage.db"
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
@@ -197,13 +198,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     ensure_has_tool_marker_column(conn)
 
     # ── All models (for filter UI) ────────────────────────────────────────────
-    model_rows = conn.execute("""
-        SELECT COALESCE(model, 'unknown') as model
-        FROM turns
-        GROUP BY model
-        ORDER BY SUM(input_tokens + output_tokens) DESC
-    """).fetchall()
-    all_models = [r["model"] for r in model_rows]
+    all_models = fetch_model_catalog(conn)
 
     turns_rows = conn.execute("""
         SELECT
