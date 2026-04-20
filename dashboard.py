@@ -1307,9 +1307,7 @@ def render_ranking_help_html():
     header_html = render_app_header(
         "Como interpretar o ranking",
         subtitle="Guia rápido dos indicadores de eficiência",
-        back_href="/",
-        back_label="← Voltar ao dashboard",
-        show_back_link=True,
+        show_back_link=False,
         right_html=HEADER_THEME_TOGGLE_HTML,
     )
     footer_html = render_app_footer()
@@ -1371,29 +1369,33 @@ def render_ranking_help_html():
 {header_html}
 <main class="wrap">
   <article class="panel">
-    <h1>Como interpretar o ranking de eficiência</h1>
     <h2>🧠 Como ler o ranking</h2>
     <p>Use o ranking para comparar sessões e projetos dentro do recorte atual (período e modelos selecionados).</p>
     <div class="score-box">
       <p class="score-title">SCORE</p>
       <code>OI 100.0 · Cache 100.0 · Custo 83.1 · TPM 1.4</code>
+      <p>O Score é a nota final da sessão, de 0 a 100. Quanto maior, melhor.</p>
     </div>
     <div class="metric-grid">
       <section class="metric-card">
-        <h3>Output/Input</h3>
+        <h3>📤 Output/Input</h3>
         <p>Mede a relação entre tokens de saída e entrada. Valores mais altos indicam maior rendimento de saída por token de input.</p>
       </section>
       <section class="metric-card">
-        <h3>% Cache Read</h3>
-        <p>Mostra quanto do input veio de leitura de cache. Em geral, percentual maior indica reaproveitamento melhor de contexto já processado.</p>
+        <h3>🗂️ % Cache Read</h3>
+        <p>Mostra quanto do input veio de leitura de cache. Valores muito altos (até casos “absurdos”, como 1.9M%) são normais por causa do acumulado interno do sistema. Em geral, quanto maior, menor custo e maior eficiência.</p>
       </section>
       <section class="metric-card">
-        <h3>Cost/Turn</h3>
-        <p>Representa o custo médio por interação. Quanto menor esse valor, melhor é o subscore de custo no ranking.</p>
+        <h3>💸 Cost/Turn</h3>
+        <p>Representa o custo médio por interação. Quanto menor esse valor, melhor.</p>
       </section>
       <section class="metric-card">
-        <h3>Interações</h3>
-        <p>Quantidade total de turns no período filtrado. Ajuda a contextualizar se o score veio de amostra pequena ou uso recorrente.</p>
+        <h3>💬 Interações</h3>
+        <p>Quantidade total de turns no período filtrado. Muitas mensagens podem indicar exploração longa (o que pode ser normal) ou ineficiência (loop/confusão).</p>
+      </section>
+      <section class="metric-card">
+        <h3>⚡ TPM (Tokens/min)</h3>
+        <p>TPM significa tokens por minuto (velocidade/volume de tokens processados ao longo do tempo). Quanto maior o TPM, maior o ritmo de processamento da sessão.</p>
       </section>
     </div>
   </article>
