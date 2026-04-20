@@ -411,6 +411,12 @@ class TestDashboardHTTP(unittest.TestCase):
         self.assertIn('id="sessions-pager"', HTML_TEMPLATE)
         self.assertIn("setSessionsPage", HTML_TEMPLATE)
 
+    def test_template_mentions_json_and_markdown_export(self):
+        self.assertIn("exportDashboardJSON()", HTML_TEMPLATE)
+        self.assertIn("exportDashboardMarkdown()", HTML_TEMPLATE)
+        self.assertIn("JSON</button>", HTML_TEMPLATE)
+        self.assertIn("MD</button>", HTML_TEMPLATE)
+
     def test_template_formats_long_session_duration_in_hours(self):
         self.assertIn("formatSessionDuration", HTML_TEMPLATE)
         self.assertIn("durationMin >= 60", HTML_TEMPLATE)
@@ -501,6 +507,10 @@ class TestHTMLTemplate(unittest.TestCase):
 
     def test_template_has_chart_js(self):
         self.assertIn("chart.js", HTML_TEMPLATE.lower())
+
+    def test_template_has_dashboard_export_builders(self):
+        self.assertIn("buildDashboardExportPayload", HTML_TEMPLATE)
+        self.assertIn("renderDashboardMarkdown", HTML_TEMPLATE)
 
     def test_template_has_substring_matching(self):
         """Verify getPricing falls back to substring match for unknown models."""
