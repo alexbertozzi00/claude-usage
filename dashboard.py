@@ -2043,7 +2043,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .pager-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pager-label { min-width: 100px; text-align: center; }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
-  .hourly-list { max-height: 320px; overflow-y: auto; padding-right: 4px; }
+  .hourly-list {
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(138, 158, 204, 0.55) transparent;
+  }
+  .hourly-list::-webkit-scrollbar { width: 10px; }
+  .hourly-list::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+  }
+  .hourly-list::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(111, 139, 198, 0.85), rgba(84, 209, 163, 0.8));
+    border-radius: 999px;
+    border: 2px solid rgba(15, 20, 35, 0.75);
+    transition: background .2s ease, border-color .2s ease;
+  }
+  .hourly-list::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(132, 163, 230, 0.95), rgba(102, 229, 185, 0.9));
+    border-color: rgba(24, 31, 52, 0.9);
+  }
   .hourly-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; line-height: 1.45; }
   .hourly-row { display: grid; grid-template-columns: 70px 1fr 180px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 13px; }
   .hourly-row:last-child { border-bottom: none; }
