@@ -1665,14 +1665,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="section-title">Ranking de Eficiência — Sessões</div>
     <table>
       <thead><tr>
-        <th>Sessão</th>
-        <th>Projeto</th>
-        <th>Score</th>
+        <th class="sortable" onclick="setRankingSessionSort('session')">Sessão <span class="sort-icon" id="rsort-session"></span></th>
+        <th class="sortable" onclick="setRankingSessionSort('project')">Projeto <span class="sort-icon" id="rsort-project"></span></th>
+        <th class="sortable" onclick="setRankingSessionSort('score_total')">Score <span class="sort-icon" id="rsort-score_total"></span></th>
         <th><span class="th-with-tooltip">Subscores <span class="tooltip" tabindex="0" aria-label="Ajuda sobre subscores do ranking de sessões">?<span class="tooltip-text">Subscores usados no score total: Output/Input (output_tokens ÷ input_tokens, com teto de 4.0x para reduzir outliers), % Cache read (cache_read_tokens ÷ input_tokens), Cost/turn invertido (quanto menor o custo médio por interação, maior o subscore) e Turns/min (opcional, incluído apenas quando há duração válida de sessão).</span></span></span></th>
-        <th><span class="th-with-tooltip">Cost/turn <span class="tooltip" tabindex="0" aria-label="Ajuda sobre cost por interação">?<span class="tooltip-text">Custo médio por interação da sessão. No subscore, esta métrica é invertida: quanto menor o custo médio por interação, maior a pontuação.</span></span></span></th>
-        <th><span class="th-with-tooltip">Output/Input <span class="tooltip" tabindex="0" aria-label="Ajuda sobre output por input">?<span class="tooltip-text">Relação output_tokens ÷ input_tokens, com teto de 4.0x para reduzir o impacto de outliers.</span></span></span></th>
-        <th><span class="th-with-tooltip">% Cache read <span class="tooltip" tabindex="0" aria-label="Ajuda sobre percentual de cache read">?<span class="tooltip-text">Relação cache_read_tokens ÷ input_tokens (em percentual).</span></span></span></th>
-        <th>Interações</th>
+        <th class="sortable" onclick="setRankingSessionSort('costPerTurn')"><span class="th-with-tooltip">Cost/turn <span class="tooltip" tabindex="0" aria-label="Ajuda sobre cost por interação">?<span class="tooltip-text">Custo médio por interação da sessão. No subscore, esta métrica é invertida: quanto menor o custo médio por interação, maior a pontuação.</span></span></span> <span class="sort-icon" id="rsort-costPerTurn"></span></th>
+        <th class="sortable" onclick="setRankingSessionSort('outputInputRatio')"><span class="th-with-tooltip">Output/Input <span class="tooltip" tabindex="0" aria-label="Ajuda sobre output por input">?<span class="tooltip-text">Relação output_tokens ÷ input_tokens, com teto de 4.0x para reduzir o impacto de outliers.</span></span></span> <span class="sort-icon" id="rsort-outputInputRatio"></span></th>
+        <th class="sortable" onclick="setRankingSessionSort('cacheReadPct')"><span class="th-with-tooltip">% Cache read <span class="tooltip" tabindex="0" aria-label="Ajuda sobre percentual de cache read">?<span class="tooltip-text">Relação cache_read_tokens ÷ input_tokens (em percentual).</span></span></span> <span class="sort-icon" id="rsort-cacheReadPct"></span></th>
+        <th class="sortable" onclick="setRankingSessionSort('turns')">Interações <span class="sort-icon" id="rsort-turns"></span></th>
       </tr></thead>
       <tbody id="ranking-sessions-body"></tbody>
     </table>
@@ -1789,6 +1789,8 @@ let modelSortCol = 'cost';
 let modelSortDir = 'desc';
 let projectSortCol = 'cost';
 let projectSortDir = 'desc';
+let rankingSessionSortCol = 'score_total';
+let rankingSessionSortDir = 'desc';
 let lastFilteredSessions = [];
 let lastRankingSessions = [];
 let lastByProject = [];
@@ -2455,12 +2457,13 @@ function applyFilter() {
   renderProjectChart(byProject);
   renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
   lastFilteredSessions = sortSessions(filteredSessions);
-  lastRankingSessions = rankingSessions;
+  lastRankingSessions = sortRankingSessions(rankingSessions);
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
   renderProjectCostSummary(lastByProject);
   renderProjectCostTable(lastByProject);
+  updateRankingSessionSortIcons();
   renderCurrentRankingSessionsPage();
   renderEfficiencyProjectRanking(rankingProjects);
 }
@@ -2861,6 +2864,47 @@ function setProjectSort(col) {
   }
   updateProjectSortIcons();
   applyFilter();
+}
+
+function setRankingSessionSort(col) {
+  rankingSessionsPage = 1;
+  if (rankingSessionSortCol === col) {
+    rankingSessionSortDir = rankingSessionSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    rankingSessionSortCol = col;
+    rankingSessionSortDir = 'desc';
+  }
+  updateRankingSessionSortIcons();
+  lastRankingSessions = sortRankingSessions(lastRankingSessions);
+  renderCurrentRankingSessionsPage();
+}
+
+function updateRankingSessionSortIcons() {
+  document.querySelectorAll('[id^="rsort-"]').forEach(el => el.textContent = '');
+  const icon = document.getElementById('rsort-' + rankingSessionSortCol);
+  if (icon) icon.textContent = rankingSessionSortDir === 'desc' ? ' \u25bc' : ' \u25b2';
+}
+
+function sortRankingSessions(rankingSessions) {
+  return [...(rankingSessions || [])].sort((a, b) => {
+    if (rankingSessionSortCol === 'session') {
+      const av = String(a.label || a.id || '');
+      const bv = String(b.label || b.id || '');
+      return rankingSessionSortDir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv);
+    }
+
+    if (rankingSessionSortCol === 'project') {
+      const av = String(a.project || '');
+      const bv = String(b.project || '');
+      return rankingSessionSortDir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv);
+    }
+
+    const av = Number(a[rankingSessionSortCol] ?? 0);
+    const bv = Number(b[rankingSessionSortCol] ?? 0);
+    if (av < bv) return rankingSessionSortDir === 'desc' ? 1 : -1;
+    if (av > bv) return rankingSessionSortDir === 'desc' ? -1 : 1;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
 }
 
 function updateProjectSortIcons() {
