@@ -1539,7 +1539,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <path d="M8 5v14l11-7z"></path>
       </svg>
     </label>
-    <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos.">&#x21bb; Reescanear</button>
+    <button id="rescan-btn" onclick="triggerRescan()" title="Reconstruir o banco de dados do zero, reprocessando todos os arquivos JSONL. Use se os dados estiverem desatualizados ou com custos incorretos." aria-label="Reescanear">&#x21bb;</button>
   </div>
 </header>
 
@@ -1589,6 +1589,37 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div id="hourly-activity-meta" class="hourly-meta"></div>
       <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
+  </div>
+  <div class="table-card">
+    <div class="section-title">Ranking de Eficiência — Sessões</div>
+    <table>
+      <thead><tr>
+        <th>Sessão</th>
+        <th>Projeto</th>
+        <th>Score</th>
+        <th><span class="th-with-tooltip">Subscores <span class="tooltip" tabindex="0" aria-label="Ajuda sobre subscores do ranking de sessões">?<span class="tooltip-text">Subscores usados no score total: Output/Input (output_tokens ÷ input_tokens, com teto de 4.0x para reduzir outliers), % Cache read (cache_read_tokens ÷ input_tokens), Cost/turn invertido (quanto menor o custo médio por interação, maior o subscore) e Turns/min (opcional, incluído apenas quando há duração válida de sessão).</span></span></span></th>
+        <th><span class="th-with-tooltip">Cost/turn <span class="tooltip" tabindex="0" aria-label="Ajuda sobre cost por interação">?<span class="tooltip-text">Custo médio por interação da sessão. No subscore, esta métrica é invertida: quanto menor o custo médio por interação, maior a pontuação.</span></span></span></th>
+        <th><span class="th-with-tooltip">Output/Input <span class="tooltip" tabindex="0" aria-label="Ajuda sobre output por input">?<span class="tooltip-text">Relação output_tokens ÷ input_tokens, com teto de 4.0x para reduzir o impacto de outliers.</span></span></span></th>
+        <th><span class="th-with-tooltip">% Cache read <span class="tooltip" tabindex="0" aria-label="Ajuda sobre percentual de cache read">?<span class="tooltip-text">Relação cache_read_tokens ÷ input_tokens (em percentual).</span></span></span></th>
+        <th>Interações</th>
+      </tr></thead>
+      <tbody id="ranking-sessions-body"></tbody>
+    </table>
+  </div>
+  <div class="table-card">
+    <div class="section-title">Ranking de Eficiência — Projetos</div>
+    <table>
+      <thead><tr>
+        <th>Projeto</th>
+        <th>Score</th>
+        <th><span class="th-with-tooltip">Subscores <span class="tooltip" tabindex="0" aria-label="Ajuda sobre subscores do ranking de projetos">?<span class="tooltip-text">Subscores usados no score total: Output/Input (output_tokens ÷ input_tokens, com teto de 4.0x para reduzir outliers), % Cache read (cache_read_tokens ÷ input_tokens) e Cost/turn invertido (quanto menor o custo médio por interação, maior o subscore). Turns/min não é aplicado no ranking por projeto.</span></span></span></th>
+        <th><span class="th-with-tooltip">Cost/turn <span class="tooltip" tabindex="0" aria-label="Ajuda sobre cost por interação de projeto">?<span class="tooltip-text">Custo médio por interação do projeto. No subscore, esta métrica é invertida: quanto menor o custo médio por interação, maior a pontuação.</span></span></span></th>
+        <th><span class="th-with-tooltip">Output/Input <span class="tooltip" tabindex="0" aria-label="Ajuda sobre output por input de projeto">?<span class="tooltip-text">Relação output_tokens ÷ input_tokens, com teto de 4.0x para reduzir o impacto de outliers.</span></span></span></th>
+        <th><span class="th-with-tooltip">% Cache read <span class="tooltip" tabindex="0" aria-label="Ajuda sobre percentual de cache read de projeto">?<span class="tooltip-text">Relação cache_read_tokens ÷ input_tokens (em percentual).</span></span></span></th>
+        <th>Interações</th>
+      </tr></thead>
+      <tbody id="ranking-projects-body"></tbody>
+    </table>
   </div>
   <div class="table-card">
     <div class="section-title">Custo por Modelo</div>
@@ -2322,7 +2353,7 @@ function applyFilter() {
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
   renderProjectCostSummary(lastByProject);
-  renderProjectCostTable(lastByProject.slice(0, 20));
+  renderProjectCostTable(lastByProject);
   renderEfficiencySessionRanking(rankingSessions);
   renderEfficiencyProjectRanking(rankingProjects);
 }
@@ -2848,13 +2879,13 @@ async function triggerRescan() {
   try {
     const resp = await fetch('/api/rescan', { method: 'POST' });
     const d = await resp.json();
-    btn.textContent = '\u21bb Reescanear (' + d.new + ' novos, ' + d.updated + ' atualizados)';
+    btn.textContent = '\u21bb';
     await loadData();
   } catch(e) {
-    btn.textContent = '\u21bb Reescanear (erro)';
+    btn.textContent = '\u21bb';
     console.error(e);
   }
-  setTimeout(() => { btn.textContent = '\u21bb Reescanear'; btn.disabled = false; }, 3000);
+  setTimeout(() => { btn.textContent = '\u21bb'; btn.disabled = false; }, 3000);
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
