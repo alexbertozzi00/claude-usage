@@ -1684,7 +1684,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <footer>
   <div class="footer-content">
     <p>
-      GitHub (fork): <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">https://github.com/alexbertozzi00/claude-usage</a>
+      GitHub: <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">https://github.com/alexbertozzi00/claude-usage</a>
       <br>
       Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Licença: MIT
     </p>
