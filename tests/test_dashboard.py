@@ -13,6 +13,7 @@ from pathlib import Path
 
 from scanner import get_db, init_db, upsert_sessions, insert_turns
 from dashboard import (
+    compute_efficiency_rankings,
     get_dashboard_data,
     get_sessions_for_hour,
     get_session_history,
@@ -66,6 +67,8 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertIn("hourly_by_model", data)
         self.assertIn("project_daily", data)
         self.assertIn("sessions_all", data)
+        self.assertIn("ranking_sessions", data)
+        self.assertIn("ranking_projects", data)
         self.assertIn("generated_at", data)
 
     def test_project_daily_populated(self):
@@ -218,6 +221,70 @@ class TestTimestampFormatting(unittest.TestCase):
         )
 
         self.assertEqual(formatted, "19/04/2026 17:12:00")
+
+
+class TestEfficiencyRanking(unittest.TestCase):
+    def test_basic_score_calculation(self):
+        rows = [{
+            "id": "sess-1",
+            "turns": 10,
+            "input": 1000,
+            "output": 1000,
+            "cache_read": 200,
+            "cache_creation": 0,
+            "cost": 1.0,
+            "duration_min": 5.0,
+        }]
+        ranking = compute_efficiency_rankings(rows)
+        self.assertEqual(len(ranking), 1)
+        self.assertGreater(ranking[0]["score_total"], 0.0)
+        self.assertIn("cost_per_turn", ranking[0]["subscores"])
+
+    def test_stable_with_zero_division_inputs(self):
+        rows = [{
+            "id": "sess-zero",
+            "turns": 0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_creation": 0,
+            "cost": 0.0,
+            "duration_min": 0.0,
+        }]
+        ranking = compute_efficiency_rankings(rows)
+        self.assertEqual(len(ranking), 1)
+        self.assertEqual(ranking[0]["cost_per_turn"], 0.0)
+        self.assertEqual(ranking[0]["output_input_ratio"], 0.0)
+        self.assertEqual(ranking[0]["cache_read_pct"], 0.0)
+
+    def test_sorts_descending_by_score(self):
+        rows = [
+            {"id": "a", "turns": 10, "input": 1000, "output": 200, "cache_read": 10, "cache_creation": 0, "cost": 10.0, "duration_min": 10.0},
+            {"id": "b", "turns": 10, "input": 1000, "output": 2000, "cache_read": 400, "cache_creation": 0, "cost": 1.0, "duration_min": 5.0},
+        ]
+        ranking = compute_efficiency_rankings(rows, top_n=2)
+        self.assertGreaterEqual(ranking[0]["score_total"], ranking[1]["score_total"])
+        self.assertEqual(ranking[0]["id"], "b")
+
+    def test_project_aggregation_consistency(self):
+        session_rows = [
+            {"id": "s1", "project": "proj", "turns": 2, "input": 100, "output": 50, "cache_read": 20, "cache_creation": 0, "cost": 0.02, "duration_min": 4},
+            {"id": "s2", "project": "proj", "turns": 3, "input": 200, "output": 70, "cache_read": 40, "cache_creation": 0, "cost": 0.03, "duration_min": 6},
+        ]
+        project_row = {
+            "id": "proj",
+            "project": "proj",
+            "turns": 5,
+            "input": 300,
+            "output": 120,
+            "cache_read": 60,
+            "cache_creation": 0,
+            "cost": 0.05,
+            "duration_min": 10,
+        }
+        ranked_project = compute_efficiency_rankings([project_row])[0]
+        self.assertAlmostEqual(ranked_project["cost_per_turn"], 0.01, places=6)
+        self.assertAlmostEqual(ranked_project["output_input_ratio"], 120 / 300, places=6)
 
 class TestSessionHistory(unittest.TestCase):
     def setUp(self):

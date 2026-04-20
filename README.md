@@ -95,6 +95,12 @@ HOST=0.0.0.0 PORT=9000 python cli.py dashboard
 
 # Varre um diretório de projetos personalizado
 python cli.py scan --projects-dir /caminho/para/transcripts
+
+# Exporta relatório (JSON + Markdown) dos últimos 7 dias
+python cli.py export --format both --period 7d --output ./reports/uso-semanal
+
+# Exporta somente JSON de intervalo customizado
+python cli.py export --format json --period custom --start 2026-04-01 --end 2026-04-15 --output ./reports/quinzena.json
 ```
 
 O scanner é incremental — ele rastreia o caminho e o tempo de modificação de cada arquivo, então rodar `scan` novamente é rápido e processa apenas arquivos novos ou alterados.
@@ -132,6 +138,31 @@ Os custos são calculados com base nos **preços de API da Anthropic em abril de
 
 > **Observação:** Estes são preços de API. Se você usa Claude Code via assinatura Max ou Pro, sua estrutura de custo real é diferente (assinatura, não por token).
 
+## Ranking de eficiência (sessões e projetos)
+
+O dashboard também exibe um **score heurístico de eficiência (0–100)** para ranquear sessões e projetos no contexto dos filtros ativos.
+
+### Definição do score
+
+Cada item recebe subindicadores normalizados para 0–100:
+
+- **Output/Input**: relação `output_tokens / input_tokens`, com teto de 4.0x para reduzir outliers.
+- **% Cache read**: relação `cache_read_tokens / input_tokens`.
+- **Cost/turn (invertido)**: quanto menor o custo médio por interação, maior o subscore.
+- **Turns/min (opcional)**: incluído apenas quando há duração válida de sessão.
+
+O **score total** é a média simples dos subscores disponíveis.
+
+### Interpretação prática
+
+- **Quanto maior, melhor**: em geral indica melhor equilíbrio entre reutilização de cache, custo por interação e rendimento de saída.
+- O ranking é relativo ao recorte atual (período + modelos selecionados).
+
+### Limitações
+
+- O score é **heurístico**: útil para comparação operacional rápida, mas **não representa uma verdade absoluta**.
+- Projetos e sessões com perfis muito diferentes podem exigir interpretação contextual (qualidade da resposta, complexidade da tarefa, etc.).
+
 ---
 
 ## Arquivos
@@ -141,3 +172,58 @@ Os custos são calculados com base nos **preços de API da Anthropic em abril de
 | `scanner.py` | Processa transcrições JSONL e grava em `~/.claude/usage.db` |
 | `dashboard.py` | Servidor HTTP + dashboard HTML/JS de página única |
 | `cli.py` | Comandos `scan`, `today`, `stats`, `insights`, `dashboard` |
+
+
+## Exportação de relatórios
+
+O subcomando `export` gera artefatos estáveis para integração com outros sistemas e também um resumo executivo em Markdown.
+
+### Opções
+
+- `--format json|md|both`
+- `--period 7d|14d|30d|custom`
+- `--output <path>`
+- `--start YYYY-MM-DD` e `--end YYYY-MM-DD` (obrigatórios quando `--period custom`)
+
+### Exemplo de saída JSON (resumo)
+
+```json
+{
+  "schema_version": "1.0.0",
+  "period": {
+    "period": "7d",
+    "current": {"start": "2026-04-13", "end": "2026-04-19"},
+    "previous": {"start": "2026-04-06", "end": "2026-04-12"}
+  },
+  "kpis": {
+    "sessions": 12,
+    "turns": 88,
+    "input_tokens": 245000,
+    "output_tokens": 138000,
+    "estimated_cost_usd": 4.2136
+  },
+  "comparison_previous_period": {
+    "delta": {"sessions": 3, "turns": 14}
+  }
+}
+```
+
+### Exemplo de saída Markdown (resumo)
+
+```md
+# Relatório de uso Claude Code (2026-04-13 até 2026-04-19)
+
+## KPIs
+- Sessões: **12** (+3 vs período anterior)
+- Interações (turns): **88** (+14 vs período anterior)
+
+## Top modelos
+| Modelo | Sessões | Turns | Input | Output | Custo (USD) |
+|---|---:|---:|---:|---:|---:|
+
+## Top projetos
+...
+
+## Alertas
+- Baixo reaproveitamento de cache: tente padronizar prompts recorrentes.
+```
