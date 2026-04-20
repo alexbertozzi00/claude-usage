@@ -163,7 +163,10 @@ GLOBAL_NAVIGATION_LOADER_SCRIPT = """
 <script>
 (function initGlobalNavigationLoader() {
   function hideGlobalLoadingOverlayForStaticPages() {
-    if (typeof setGlobalLoading === 'function') return;
+    if (typeof setGlobalLoading === 'function') {
+      setGlobalLoading(false);
+      return;
+    }
     const overlay = document.getElementById('global-loading-overlay');
     if (overlay) {
       overlay.classList.remove('is-visible');
@@ -209,6 +212,10 @@ GLOBAL_NAVIGATION_LOADER_SCRIPT = """
   });
 
   window.addEventListener('DOMContentLoaded', () => {
+    hideGlobalLoadingOverlayForStaticPages();
+  });
+
+  window.addEventListener('pageshow', () => {
     hideGlobalLoadingOverlayForStaticPages();
   });
 })();
@@ -3785,6 +3792,10 @@ document.addEventListener('DOMContentLoaded', () => {
   startAutoRefreshPolling();
   updateMetaStatus();
   loadData();
+});
+
+window.addEventListener('pageshow', () => {
+  setGlobalLoading(false);
 });
 </script>
 """ + GLOBAL_NAVIGATION_LOADER_SCRIPT + r"""
