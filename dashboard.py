@@ -1,5 +1,5 @@
 """
-dashboard.py - Local web dashboard served on localhost:8080.
+dashboard.py - Local web dashboard served on localhost:8082.
 """
 
 import json
@@ -3480,7 +3480,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 def serve(host=None, port=None):
     host = host or os.environ.get("HOST", "localhost")
-    port = port or int(os.environ.get("PORT", "8080"))
+    port = port or int(os.environ.get("PORT", "8082"))
     server = HTTPServer((host, port), DashboardHandler)
     print(f"Dashboard running at http://{host}:{port}")
     print("Press Ctrl+C to stop.")
