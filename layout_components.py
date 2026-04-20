@@ -36,7 +36,7 @@ def render_app_footer():
         '<footer class="app-footer">'
         '<div class="app-footer-content">'
         "<p>"
-        'GitHub (fork): <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">'
+        'GitHub: <a href="https://github.com/alexbertozzi00/claude-usage" target="_blank">'
         "https://github.com/alexbertozzi00/claude-usage</a><br>"
         "Fork por: Alexandre Bertozzi &nbsp;&middot;&nbsp; Licença: MIT"
         "</p>"
