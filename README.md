@@ -3,8 +3,6 @@
 [![Licença: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![claude-code](https://img.shields.io/badge/claude--code-black?style=flat-square)](https://claude.ai/code)
 
-**Assinantes Pro e Max recebem uma barra de progresso. Este painel mostra o cenário completo.**
-
 O Claude Code grava logs locais detalhados de uso — contagem de tokens, modelos, sessões e projetos — independentemente do seu plano. Este dashboard lê esses logs e os transforma em gráficos e estimativas de custo. Funciona com planos API, Pro e Max.
 
 ![Claude Usage Dashboard](docs/screenshot.png)
