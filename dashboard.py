@@ -1638,6 +1638,164 @@ def render_ranking_help_html():
 </html>"""
 
 
+def render_trend_help_html():
+    header_html = render_app_header(
+        "Como interpretar a tendência de uso",
+        subtitle="Guia rápido de leitura do gráfico",
+        show_back_link=False,
+        right_html=HEADER_THEME_TOGGLE_HTML,
+    )
+    footer_html = render_app_footer()
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<title>ClaudeFlow - Ajuda da Tendência de Uso</title>
+<style>
+{GLOBAL_LOADER_CSS}
+  :root, [data-theme="dark"] {{
+    --bg: #050505;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #d97757;
+    --link: #6aa6ff;
+    --code-bg: rgba(255, 255, 255, 0.03);
+  }}
+  [data-theme="light"] {{
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --border: #d6deea;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #c55f3c;
+    --link: #1d4ed8;
+    --code-bg: #f8fafc;
+  }}
+  * {{ box-sizing: border-box; }}
+{COMMON_LAYOUT_STYLES}
+  body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+  .wrap {{ width: min(1100px, 100%); margin: 0 auto; padding: clamp(16px, 3vw, 28px); }}
+  .panel {{ background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: clamp(16px, 2.4vw, 24px); }}
+  h2 {{ margin: 0 0 12px; font-size: 26px; line-height: 1.2; color: var(--accent); }}
+  h3 {{ margin: 14px 0 6px; font-size: 18px; }}
+  p {{ margin: 0 0 10px; color: var(--muted); line-height: 1.6; }}
+  ul {{ margin: 10px 0 0; padding-left: 20px; color: var(--muted); }}
+  li {{ margin-bottom: 8px; line-height: 1.5; }}
+  .section {{ margin-top: 20px; }}
+  .highlight {{
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--code-bg);
+  }}
+  #theme-toggle-button {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+  }}
+  #theme-toggle-button svg {{ display: block; width: 48px; height: 30px; }}
+  #toggle {{ display: none; }}
+  #container,
+  #button,
+  #sun,
+  #moon,
+  #cloud,
+  #stars {{ transition: all .4s ease; }}
+  #toggle:checked + svg #container {{ fill: #2b4360; }}
+  #toggle:checked + svg #button {{ transform: translate(28px, 2.333px); }}
+  #sun {{ opacity: 1; }}
+  #toggle:checked + svg #sun {{ opacity: 0; }}
+  #moon {{ opacity: 0; }}
+  #toggle:checked + svg #moon {{ opacity: 1; }}
+  #cloud {{ opacity: 1; }}
+  #toggle:checked + svg #cloud {{ opacity: 0; }}
+  #stars {{ opacity: 0; }}
+  #toggle:checked + svg #stars {{ opacity: 1; }}
+</style>
+</head>
+<body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" role="status" aria-live="polite" aria-busy="true">
+{GLOBAL_LOADER_HTML}
+</div>
+{header_html}
+<main class="wrap">
+  <article class="panel">
+    <h2>📊 Tendência de Uso (Entrada + Saída)</h2>
+    <p>Essa visualização mostra como o uso de tokens evolui ao longo do tempo — combinando entrada + saída em cada ponto do gráfico.</p>
+
+    <section class="section">
+      <h3>🔵 Linha principal</h3>
+      <p>Representa o uso real de tokens em cada momento. Aqui você vê picos e quedas exatamente como aconteceram.</p>
+    </section>
+
+    <section class="section">
+      <h3>📈 Linha tracejada (tendência)</h3>
+      <p>Mostra a média móvel, suavizando oscilações para destacar o comportamento geral.</p>
+      <ul>
+        <li>🗓️ Diário: média dos últimos 7 dias</li>
+        <li>⏱️ Horário: média das últimas 3 horas</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h3>🧠 Como interpretar</h3>
+      <ul>
+        <li>Picos altos = uso intenso em curto período</li>
+        <li>Linha suave subindo = tendência de crescimento</li>
+        <li>Linha suave descendo = queda no uso</li>
+        <li>Diferença grande entre linhas = alta volatilidade</li>
+      </ul>
+    </section>
+
+    <section class="section highlight">
+      <h3>✨ Dica</h3>
+      <p>Use a linha de tendência para entender o padrão de uso, sem se deixar levar por variações pontuais.</p>
+    </section>
+  </article>
+</main>
+{footer_html}
+<script>
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
+  const toggleInput = document.getElementById('toggle');
+  const root = document.documentElement;
+  function applyTheme(theme) {{
+    const finalTheme = theme === 'light' ? 'light' : 'dark';
+    root.setAttribute('data-theme', finalTheme);
+    if (toggleInput) toggleInput.checked = finalTheme === 'dark';
+  }}
+  function getInitialTheme() {{
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }}
+  function initThemeToggle() {{
+    if (!toggleInput) return;
+    toggleInput.addEventListener('change', (ev) => {{
+      const nextTheme = ev.target.checked ? 'dark' : 'light';
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      applyTheme(nextTheme);
+    }});
+  }}
+  applyTheme(getInitialTheme());
+  document.addEventListener('DOMContentLoaded', initThemeToggle);
+</script>
+{GLOBAL_NAVIGATION_LOADER_SCRIPT}
+</body>
+</html>"""
+
+
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1991,7 +2149,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="chart-card wide">
-      <h2><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text" id="trend-tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span></h2>
+      <h2 class="chart-title-row"><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text" id="trend-tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span><a class="secondary-link" href="/help/trend">Como interpretar esta tendência</a></h2>
       <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
     </div>
     <div class="chart-card">
@@ -3905,8 +4063,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-        elif parsed.path == "/ranking/help":
+        elif parsed.path in ("/ranking/help", "/help/ranking"):
             body = render_ranking_help_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path in ("/trend/help", "/help/trend"):
+            body = render_trend_help_html().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
