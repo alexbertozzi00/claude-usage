@@ -3607,7 +3607,24 @@ async function triggerRescan() {
 function setGlobalLoading(visible) {
   const overlay = document.getElementById('global-loading-overlay');
   if (!overlay) return;
+  if (visible) {
+    window.__globalLoadingStartedAt = Date.now();
+  }
   overlay.classList.toggle('is-visible', Boolean(visible));
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function hideGlobalLoadingWithMinimumDelay() {
+  const minVisibleMs = 300;
+  const startedAt = window.__globalLoadingStartedAt || Date.now();
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs < minVisibleMs) {
+    await wait(minVisibleMs - elapsedMs);
+  }
+  setGlobalLoading(false);
 }
 
 async function loadData() {
@@ -3641,9 +3658,10 @@ async function loadData() {
 
     applyFilter();
   } catch(e) {
+    document.body.innerHTML = '<div style="padding:40px;color:#f87171">Falha ao carregar dados do dashboard. Tente atualizar a página.</div>';
     console.error(e);
   } finally {
-    setGlobalLoading(false);
+    await hideGlobalLoadingWithMinimumDelay();
   }
 }
 
