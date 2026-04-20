@@ -1268,6 +1268,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --green: #4ade80;
     --hover-bg: rgba(255, 255, 255, 0.04);
     --active-bg: rgba(217, 119, 87, 0.18);
+    --stat-hover-bg: rgba(255, 255, 255, 0.06);
+    --stat-hover-border: rgba(217, 119, 87, 0.55);
     --tag-bg: rgba(79, 142, 247, 0.20);
     --table-hover-bg: rgba(255, 255, 255, 0.03);
     --chart-grid: #2a2d3a;
@@ -1284,6 +1286,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --green: #15803d;
     --hover-bg: rgba(15, 23, 42, 0.05);
     --active-bg: rgba(194, 65, 12, 0.15);
+    --stat-hover-bg: #f8fafc;
+    --stat-hover-border: rgba(194, 65, 12, 0.45);
     --tag-bg: rgba(29, 78, 216, 0.12);
     --table-hover-bg: rgba(15, 23, 42, 0.04);
     --chart-grid: #d7dfeb;
@@ -1385,13 +1389,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    transition: transform 0.34s ease, border-color 0.34s ease, box-shadow 0.34s ease, background 0.34s ease;
   }
   .stat-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--accent);
-    background: var(--active-bg);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    transform: translateY(-2px);
+    border-color: var(--stat-hover-border);
+    background: var(--stat-hover-bg);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
   }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
   .stat-card .value { font-size: 22px; font-weight: 700; }
