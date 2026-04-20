@@ -1674,7 +1674,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div id="sessions-pager" class="table-footer"></div>
   </div>
   <div class="table-card">
-    <div class="section-header"><div class="section-title">Custo por Projeto</div><button class="export-btn" onclick="exportProjectsCSV()" title="Exportar todos os projetos para CSV">&#x2913; CSV</button></div>
+    <div class="section-header"><div class="section-title">Custo por Projeto</div><div style="display:flex; gap:6px;"><button class="export-btn" onclick="exportProjectsJSON()" title="Exportar todos os projetos para JSON">&#x2913; JSON</button><button class="export-btn" onclick="exportProjectsMarkdown()" title="Exportar todos os projetos para Markdown">&#x2913; MD</button><button class="export-btn" onclick="exportProjectsCSV()" title="Exportar todos os projetos para CSV">&#x2913; CSV</button></div></div>
     <table>
       <thead><tr>
         <th>Projeto</th>
@@ -3152,6 +3152,91 @@ function exportProjectsCSV() {
     return [p.project, p.sessions, p.turns, p.input, p.output, p.cache_read, p.cache_creation, p.cost.toFixed(4)];
   });
   downloadCSV('projetos', header, rows);
+}
+
+function buildProjectsExportPayload() {
+  if (!rawData) return null;
+  const spec = resolveExportPeriod();
+  return {
+    schema_version: '1.0.0',
+    generated_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    period: spec,
+    applied_filters: {
+      range: selectedRange,
+      models: Array.from(selectedModels),
+    },
+    totals: {
+      projects: lastByProject.length,
+      sessions: lastByProject.reduce((acc, p) => acc + Number(p.sessions || 0), 0),
+      turns: lastByProject.reduce((acc, p) => acc + Number(p.turns || 0), 0),
+      input_tokens: lastByProject.reduce((acc, p) => acc + Number(p.input || 0), 0),
+      output_tokens: lastByProject.reduce((acc, p) => acc + Number(p.output || 0), 0),
+      cache_read_tokens: lastByProject.reduce((acc, p) => acc + Number(p.cache_read || 0), 0),
+      cache_creation_tokens: lastByProject.reduce((acc, p) => acc + Number(p.cache_creation || 0), 0),
+      estimated_cost_usd: Number(lastByProject.reduce((acc, p) => acc + Number(p.cost || 0), 0).toFixed(6)),
+    },
+    projects: lastByProject.map(p => ({
+      project: p.project,
+      sessions: Number(p.sessions || 0),
+      turns: Number(p.turns || 0),
+      input_tokens: Number(p.input || 0),
+      output_tokens: Number(p.output || 0),
+      cache_read_tokens: Number(p.cache_read || 0),
+      cache_creation_tokens: Number(p.cache_creation || 0),
+      estimated_cost_usd: Number(Number(p.cost || 0).toFixed(6)),
+    })),
+  };
+}
+
+function renderProjectsMarkdown(payload) {
+  const period = payload.period.current;
+  const totals = payload.totals;
+  const lines = [
+    `# Custo por Projeto (${period.start} até ${period.end})`,
+    '',
+    `- Projetos: **${totals.projects}**`,
+    `- Sessões: **${totals.sessions}**`,
+    `- Interações (turns): **${totals.turns}**`,
+    `- Tokens de entrada: **${totals.input_tokens}**`,
+    `- Tokens de saída: **${totals.output_tokens}**`,
+    `- Custo estimado total: **$${Number(totals.estimated_cost_usd || 0).toFixed(4)}**`,
+    '',
+    '| Projeto | Sessões | Interações | Entrada | Saída | Leitura de cache | Criação de cache | Custo estimado (USD) |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|',
+  ];
+
+  if (payload.projects && payload.projects.length) {
+    for (const item of payload.projects) {
+      lines.push(`| ${item.project} | ${item.sessions} | ${item.turns} | ${item.input_tokens} | ${item.output_tokens} | ${item.cache_read_tokens} | ${item.cache_creation_tokens} | ${Number(item.estimated_cost_usd || 0).toFixed(4)} |`);
+    }
+  } else {
+    lines.push('| (sem dados) | 0 | 0 | 0 | 0 | 0 | 0 | 0.0000 |');
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+function exportProjectsJSON() {
+  const payload = buildProjectsExportPayload();
+  if (!payload) {
+    toast('Sem dados para exportar.');
+    return;
+  }
+  const filename = `custo_por_projeto_${payload.period.current.end}_${selectedRange}.json`;
+  downloadTextFile(JSON.stringify(payload, null, 2) + '\n', filename, 'application/json;charset=utf-8;');
+  toast('Exportação de projetos em JSON concluída.');
+}
+
+function exportProjectsMarkdown() {
+  const payload = buildProjectsExportPayload();
+  if (!payload) {
+    toast('Sem dados para exportar.');
+    return;
+  }
+  const filename = `custo_por_projeto_${payload.period.current.end}_${selectedRange}.md`;
+  downloadTextFile(renderProjectsMarkdown(payload), filename, 'text/markdown;charset=utf-8;');
+  toast('Exportação de projetos em Markdown concluída.');
 }
 
 // ── Rescan ────────────────────────────────────────────────────────────────
