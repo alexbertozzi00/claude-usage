@@ -1717,7 +1717,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <table>
       <thead><tr>
         <th>Sessão</th>
-        <th>Projeto</th>
+        <th class="sortable" onclick="setSessionSort('project')">Projeto <span class="sort-icon" id="sort-icon-project"></span></th>
         <th>Nome sessão</th>
         <th class="sortable" onclick="setSessionSort('last')">Última Atividade <span class="sort-icon" id="sort-icon-last"></span></th>
         <th class="sortable" onclick="setSessionSort('duration_min')">Duração <span class="sort-icon" id="sort-icon-duration_min"></span></th>
@@ -2237,6 +2237,9 @@ function sortSessions(sessions) {
     if (sessionSortCol === 'cost') {
       av = calcCost(a.model, a.input, a.output, a.cache_read, a.cache_creation);
       bv = calcCost(b.model, b.input, b.output, b.cache_read, b.cache_creation);
+    } else if (sessionSortCol === 'project') {
+      av = String(a.project || '').toLowerCase();
+      bv = String(b.project || '').toLowerCase();
     } else if (sessionSortCol === 'duration_min') {
       av = parseFloat(a.duration_min) || 0;
       bv = parseFloat(b.duration_min) || 0;
