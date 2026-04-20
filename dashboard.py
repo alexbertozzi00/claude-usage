@@ -773,7 +773,8 @@ def render_session_history_html(session_data):
         raw_text = entry["text"] or ""
         text = escape(raw_text)
         tool_marker_class = " tool-message" if "[tool_" in raw_text.lower() else ""
-        row_html = f"""<article class="entry {role}{tool_marker_class}">
+        aiox_marker_class = " aiox-message" if "ACTIVATION-NOTICE:" in raw_text else ""
+        row_html = f"""<article class="entry {role}{tool_marker_class}{aiox_marker_class}">
   <div class="entry-meta">
     <span class="role">{role_label}</span>
     <span class="time">{timestamp}</span>
@@ -914,6 +915,7 @@ def render_session_history_html(session_data):
   .entry.assistant .role {{ color: var(--entry-assistant-text); background: var(--entry-assistant-bg); }}
   .entry pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.45; }}
   body.hide-tools-enabled .entry.tool-message {{ display: none; }}
+  body.hide-aiox-enabled .entry.aiox-message {{ display: none; }}
 </style>
 </head>
 <body>
@@ -929,6 +931,16 @@ def render_session_history_html(session_data):
       <span class="tooltip" tabindex="0" aria-label="Ajuda sobre ocultar tools">
         ?
         <span class="tooltip-text">Oculta mensagens que contenham [tool_*], reduzindo poluição visual e facilitando a leitura da sessão.</span>
+      </span>
+    </div>
+    <div class="hide-tools">
+      <label for="hide-aiox-toggle">
+        <input type="checkbox" id="hide-aiox-toggle">
+        <span>Ocultar leitura AIOX</span>
+      </label>
+      <span class="tooltip" tabindex="0" aria-label="Ajuda sobre ocultar leitura AIOX">
+        ?
+        <span class="tooltip-text">Oculta mensagens que contenham ACTIVATION-NOTICE:, reduzindo ruído visual na leitura da sessão.</span>
       </span>
     </div>
   </div>
@@ -948,6 +960,7 @@ def render_session_history_html(session_data):
   let currentCustomName = {json.dumps(custom_name_raw)};
   const THEME_STORAGE_KEY = 'claude_usage_theme';
   const HIDE_TOOLS_STORAGE_KEY = 'claude_usage_hide_tools';
+  const HIDE_AIOX_STORAGE_KEY = 'claude_usage_hide_aiox';
   function getPreferredTheme() {{
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
@@ -972,6 +985,16 @@ def render_session_history_html(session_data):
   applyHideTools(localStorage.getItem(HIDE_TOOLS_STORAGE_KEY) === '1');
   document.getElementById('hide-tools-toggle')?.addEventListener('change', (event) => {{
     applyHideTools(Boolean(event.target.checked));
+  }});
+  function applyHideAiox(enabled) {{
+    document.body.classList.toggle('hide-aiox-enabled', enabled);
+    const hideAioxToggle = document.getElementById('hide-aiox-toggle');
+    if (hideAioxToggle) hideAioxToggle.checked = enabled;
+    localStorage.setItem(HIDE_AIOX_STORAGE_KEY, enabled ? '1' : '0');
+  }}
+  applyHideAiox(localStorage.getItem(HIDE_AIOX_STORAGE_KEY) === '1');
+  document.getElementById('hide-aiox-toggle')?.addEventListener('change', (event) => {{
+    applyHideAiox(Boolean(event.target.checked));
   }});
   async function renameCurrentSession() {{
     const titleEl = document.getElementById('session-title');
