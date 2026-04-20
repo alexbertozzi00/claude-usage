@@ -1991,7 +1991,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="chart-card wide">
-      <h2><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span></h2>
+      <h2><span class="th-with-tooltip">Tendência de Uso (Entrada + Saída) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre tendência de uso">?<span class="tooltip-text" id="trend-tooltip-text">Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.</span></span></span></h2>
       <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
     </div>
     <div class="chart-card">
@@ -2696,6 +2696,8 @@ function applyFilter() {
     d.cache_creation += r.cache_creation;
   }
   const daily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
+  const hourlyTokenRows = buildHourlyTokenRows(filteredHourly, cutoff);
+  const hourly = buildHourlyTrendRows(filteredHourly, cutoff);
 
   // By model: aggregate tokens + turns from daily data
   const modelMap = {};
@@ -2789,20 +2791,15 @@ function applyFilter() {
     : null;
 
   // Update daily chart title
-  document.getElementById('daily-chart-title').textContent = 'Uso Diário de Tokens \u2014 ' + getSelectedRangeLabel();
+  document.getElementById('daily-chart-title').textContent = (selectedRange === '1d'
+    ? 'Uso por Hora de Tokens'
+    : 'Uso Diário de Tokens') + ' \u2014 ' + getSelectedRangeLabel();
 
   renderStats(totals);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
-  renderDailyChart(daily);
+  renderDailyChart(selectedRange === '1d' ? hourlyTokenRows : daily, selectedRange === '1d' ? 'hourly' : 'daily');
   updateTrendChartVisibility();
-  if (selectedRange === '1d') {
-    if (charts.trend) {
-      charts.trend.destroy();
-      charts.trend = null;
-    }
-  } else {
-    renderTrendChart(daily);
-  }
+  renderTrendChart(selectedRange === '1d' ? hourly : daily, selectedRange === '1d' ? 'hourly' : 'daily');
   renderModelChart(byModel);
   renderProjectChart(byProject);
   renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
@@ -2883,18 +2880,21 @@ function renderInsights(totals, byModel, byProject, peakDay, lowDay) {
     '<li class="hint">Os insights são atualizados automaticamente ao alterar filtros de modelo e período.</li>';
 }
 
-function renderDailyChart(daily) {
+function renderDailyChart(rows, mode = 'daily') {
   const ctx = document.getElementById('chart-daily').getContext('2d');
   if (charts.daily) charts.daily.destroy();
+  const isHourly = mode === 'hourly';
   charts.daily = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: daily.map(d => fmtDate(d.day)),
+      labels: isHourly
+        ? rows.map(r => `${r.hour}:00`)
+        : rows.map(d => fmtDate(d.day)),
       datasets: [
-        { label: 'Entrada',        data: daily.map(d => d.input),          backgroundColor: TOKEN_COLORS.input,          stack: 'tokens' },
-        { label: 'Saída',          data: daily.map(d => d.output),         backgroundColor: TOKEN_COLORS.output,         stack: 'tokens' },
-        { label: 'Leitura de Cache',     data: daily.map(d => d.cache_read),     backgroundColor: TOKEN_COLORS.cache_read,     stack: 'tokens' },
-        { label: 'Criação de Cache', data: daily.map(d => d.cache_creation), backgroundColor: TOKEN_COLORS.cache_creation, stack: 'tokens' },
+        { label: 'Entrada',        data: rows.map(r => r.input),          backgroundColor: TOKEN_COLORS.input,          stack: 'tokens' },
+        { label: 'Saída',          data: rows.map(r => r.output),         backgroundColor: TOKEN_COLORS.output,         stack: 'tokens' },
+        { label: 'Leitura de Cache',     data: rows.map(r => r.cache_read),     backgroundColor: TOKEN_COLORS.cache_read,     stack: 'tokens' },
+        { label: 'Criação de Cache', data: rows.map(r => r.cache_creation), backgroundColor: TOKEN_COLORS.cache_creation, stack: 'tokens' },
       ]
     },
     options: {
@@ -2919,15 +2919,69 @@ function movingAverage(values, windowSize) {
   return out;
 }
 
-function renderTrendChart(daily) {
+function buildHourlyTokenRows(hourlyRows, cutoff) {
+  const groupedByHour = Array.from({ length: 24 }, (_, hour) => ({
+    hour: String(hour).padStart(2, '0'),
+    input: 0,
+    output: 0,
+    cache_read: 0,
+    cache_creation: 0,
+  }));
+
+  for (const row of hourlyRows || []) {
+    if (cutoff && row.day !== cutoff) continue;
+    const idx = Number.parseInt(row.hour, 10);
+    if (Number.isNaN(idx) || idx < 0 || idx > 23) continue;
+    groupedByHour[idx].input += row.input || 0;
+    groupedByHour[idx].output += row.output || 0;
+    groupedByHour[idx].cache_read += row.cache_read || 0;
+    groupedByHour[idx].cache_creation += row.cache_creation || 0;
+  }
+
+  return groupedByHour;
+}
+
+function buildHourlyTrendRows(hourlyRows, cutoff) {
+  const groupedByHour = Array.from({ length: 24 }, (_, hour) => ({
+    hour: String(hour).padStart(2, '0'),
+    input: 0,
+    output: 0,
+  }));
+
+  for (const row of hourlyRows || []) {
+    if (cutoff && row.day !== cutoff) continue;
+    const idx = Number.parseInt(row.hour, 10);
+    if (Number.isNaN(idx) || idx < 0 || idx > 23) continue;
+    groupedByHour[idx].input += row.input || 0;
+    groupedByHour[idx].output += row.output || 0;
+  }
+
+  return groupedByHour;
+}
+
+function updateTrendTooltip(mode) {
+  const tooltip = document.getElementById('trend-tooltip-text');
+  if (!tooltip) return;
+  if (mode === 'hourly') {
+    tooltip.textContent = 'Mostra o total por hora de tokens de entrada + saída no dia selecionado para os modelos ativos.';
+    return;
+  }
+  tooltip.textContent = 'Mostra o total diário de tokens de entrada + saída para os modelos e período selecionados. A linha tracejada representa a média móvel de 7 dias para facilitar a leitura da tendência.';
+}
+
+function renderTrendChart(rows, mode = 'daily') {
   const canvas = document.getElementById('chart-trend');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (charts.trend) charts.trend.destroy();
 
-  const labels = daily.map(d => fmtDate(d.day));
-  const totalIO = daily.map(d => (d.input || 0) + (d.output || 0));
-  const avg7d = movingAverage(totalIO, 7);
+  updateTrendTooltip(mode);
+  const isHourly = mode === 'hourly';
+  const labels = isHourly
+    ? rows.map(r => `${r.hour}:00`)
+    : rows.map(d => fmtDate(d.day));
+  const totalIO = rows.map(r => (r.input || 0) + (r.output || 0));
+  const trend = movingAverage(totalIO, isHourly ? 3 : 7);
 
   charts.trend = new Chart(ctx, {
     type: 'line',
@@ -2944,8 +2998,8 @@ function renderTrendChart(daily) {
           pointRadius: 2,
         },
         {
-          label: 'Curva de tendência',
-          data: avg7d,
+          label: isHourly ? 'Curva de tendência (3h)' : 'Curva de tendência',
+          data: trend,
           borderColor: 'rgba(217,119,87,1)',
           borderDash: [6, 4],
           tension: 0.25,
