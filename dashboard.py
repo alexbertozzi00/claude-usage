@@ -72,6 +72,59 @@ HEADER_THEME_TOGGLE_HTML = """
 </label>
 """
 
+GLOBAL_LOADER_HTML = """
+<div class="loader" aria-hidden="true">
+  <div class="bar1"></div>
+  <div class="bar2"></div>
+  <div class="bar3"></div>
+  <div class="bar4"></div>
+  <div class="bar5"></div>
+  <div class="bar6"></div>
+  <div class="bar7"></div>
+  <div class="bar8"></div>
+  <div class="bar9"></div>
+</div>
+"""
+
+GLOBAL_LOADER_CSS = """
+.loader {
+  width: 45px;
+  height: 40px;
+  position: relative;
+}
+
+.loader div {
+  width: 5px;
+  height: 100%;
+  background: #4f8ef7;
+  position: absolute;
+  left: 0;
+  transform-origin: center;
+  animation: loaderFade 1.2s linear infinite;
+}
+
+.loader .bar1 { left: 0px; animation-delay: 0s; }
+.loader .bar2 { left: 5px; animation-delay: 0.1s; }
+.loader .bar3 { left: 10px; animation-delay: 0.2s; }
+.loader .bar4 { left: 15px; animation-delay: 0.3s; }
+.loader .bar5 { left: 20px; animation-delay: 0.4s; }
+.loader .bar6 { left: 25px; animation-delay: 0.5s; }
+.loader .bar7 { left: 30px; animation-delay: 0.6s; }
+.loader .bar8 { left: 35px; animation-delay: 0.7s; }
+.loader .bar9 { left: 40px; animation-delay: 0.8s; }
+
+@keyframes loaderFade {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scaleY(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+"""
+
 
 def _format_date(date_str):
     """Convert YYYY-MM-DD -> dd/MM/YYYY when possible."""
@@ -1439,6 +1492,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>ClaudeFlow - Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
+""" + GLOBAL_LOADER_CSS + r"""
   :root, [data-theme="dark"] {
     --bg: #0f1117;
     --card: #1a1d27;
@@ -1699,6 +1753,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .disclaimer-banner strong { color: var(--text); }
   .disclaimer-banner p { margin: 0; }
   .disclaimer-banner p + p { margin-top: 8px; }
+  .global-loading-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 17, 23, 0.56);
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .global-loading-overlay.is-visible {
+    opacity: 1;
+    pointer-events: all;
+  }
 
   footer { border-top: 1px solid var(--border); padding: 20px 24px; margin-top: 8px; }
   .footer-content { max-width: 1400px; margin: 0 auto; text-align: center; }
@@ -1711,6 +1781,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
+<div id="global-loading-overlay" class="global-loading-overlay is-visible" aria-live="polite" aria-busy="true">
+""" + GLOBAL_LOADER_HTML + r"""
+</div>
 <header>
   <h1><img class="logomarca" src="/images/logomarca.png" alt="Painel de Uso do Claude Code"></h1>
   <div class="header-controls">
@@ -3496,6 +3569,7 @@ async function triggerRescan() {
   const btn = document.getElementById('rescan-btn');
   btn.disabled = true;
   btn.textContent = '\u21bb Escaneando...';
+  setGlobalLoading(true);
   try {
     const resp = await fetch('/api/rescan', { method: 'POST' });
     const d = await resp.json();
@@ -3504,12 +3578,20 @@ async function triggerRescan() {
   } catch(e) {
     btn.textContent = '\u21bb';
     console.error(e);
+    setGlobalLoading(false);
   }
   setTimeout(() => { btn.textContent = '\u21bb'; btn.disabled = false; }, 3000);
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
+function setGlobalLoading(visible) {
+  const overlay = document.getElementById('global-loading-overlay');
+  if (!overlay) return;
+  overlay.classList.toggle('is-visible', Boolean(visible));
+}
+
 async function loadData() {
+  setGlobalLoading(true);
   try {
     const resp = await fetch('/api/data');
     const d = await resp.json();
@@ -3540,6 +3622,8 @@ async function loadData() {
     applyFilter();
   } catch(e) {
     console.error(e);
+  } finally {
+    setGlobalLoading(false);
   }
 }
 
