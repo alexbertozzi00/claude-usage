@@ -1380,7 +1380,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
   .container > .meta { margin-bottom: 12px; }
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    background: var(--active-bg);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
   .stat-card .value { font-size: 22px; font-weight: 700; }
   .stat-card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
