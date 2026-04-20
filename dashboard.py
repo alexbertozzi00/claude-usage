@@ -1609,7 +1609,7 @@ def render_ranking_help_html():
 </main>
 {footer_html}
 <script>
-  const THEME_STORAGE_KEY = 'ccu:theme';
+  const THEME_STORAGE_KEY = 'claude_usage_theme';
   const toggleInput = document.getElementById('toggle');
   const root = document.documentElement;
   function applyTheme(theme) {{

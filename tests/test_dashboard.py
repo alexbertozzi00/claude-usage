@@ -21,6 +21,7 @@ from dashboard import (
     rename_session,
     DashboardHandler,
     HTML_TEMPLATE,
+    render_ranking_help_html,
     _format_timestamp,
 )
 
@@ -426,6 +427,11 @@ class TestDashboardHTTP(unittest.TestCase):
         with urllib.request.urlopen(url) as resp:
             self.assertEqual(resp.status, 200)
             self.assertIn("text/html", resp.headers["Content-Type"])
+
+
+    def test_ranking_help_uses_shared_theme_storage_key(self):
+        html = render_ranking_help_html()
+        self.assertIn("claude_usage_theme", html)
 
     def test_api_rescan_returns_json(self):
         url = f"http://127.0.0.1:{self.port}/api/rescan"
