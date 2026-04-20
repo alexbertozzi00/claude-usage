@@ -6,6 +6,10 @@
 O Claude Code grava logs locais detalhados de uso — contagem de tokens, modelos, sessões e projetos — independentemente do seu plano. Este dashboard lê esses logs e os transforma em gráficos e estimativas de custo. Funciona com planos API, Pro e Max.
 
 ![Claude Usage Dashboard](docs/screenshot.png)
+![Gráficos do dashboard](docs/graphs.png)
+![Gráficos adicionais do dashboard](docs/graphs2.png)
+![Lista de sessões](docs/listaSessao.png)
+![Histórico de sessão](docs/historicoSessao.png)
 
 ---
 
