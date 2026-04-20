@@ -25,8 +25,6 @@ FAVICON_PATH = IMAGES_DIR / "favicon.svg"
 LOGOMARCA_PATH = IMAGES_DIR / "logomarca.png"
 MAX_CUSTOM_NAME_LENGTH = 80
 EFFICIENCY_OUTPUT_INPUT_CAP = 4.0
-EFFICIENCY_TOP_N = 10
-
 COMMON_LAYOUT_STYLES = """
   .app-header {
     background: var(--card, #1a1d27);
@@ -157,7 +155,7 @@ def _clamp(value, low=0.0, high=100.0):
     return max(low, min(high, value))
 
 
-def compute_efficiency_rankings(rows, top_n=EFFICIENCY_TOP_N):
+def compute_efficiency_rankings(rows, top_n=None):
     """Compute normalized efficiency score (0-100) for session/project rows."""
     if not rows:
         return []
@@ -218,6 +216,8 @@ def compute_efficiency_rankings(rows, top_n=EFFICIENCY_TOP_N):
         })
 
     ranking.sort(key=lambda item: (-item["score_total"], -(item.get("turns") or 0), str(item.get("id") or item.get("project") or "")))
+    if top_n is None:
+        return ranking
     return ranking[:top_n]
 
 
@@ -1605,6 +1605,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </tr></thead>
       <tbody id="ranking-sessions-body"></tbody>
     </table>
+    <div id="ranking-sessions-pager" class="table-footer"></div>
   </div>
   <div class="table-card">
     <div class="section-title">Ranking de Eficiência — Projetos</div>
@@ -1722,10 +1723,13 @@ let modelSortDir = 'desc';
 let projectSortCol = 'cost';
 let projectSortDir = 'desc';
 let lastFilteredSessions = [];
+let lastRankingSessions = [];
 let lastByProject = [];
 let sessionSortDir = 'desc';
 let sessionsPage = 1;
 const SESSIONS_PAGE_SIZE = 15;
+let rankingSessionsPage = 1;
+const RANKING_SESSIONS_PAGE_SIZE = 20;
 const renamingSessions = new Set();
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_INTERVAL_SECONDS = AUTO_REFRESH_INTERVAL_MS / 1000;
@@ -1817,7 +1821,6 @@ const PRICING = {
   'claude-haiku-4-6':  { input:  1.00, output:  5.00, cache_write:  1.25, cache_read: 0.10 },
 };
 const EFFICIENCY_OUTPUT_INPUT_CAP = 4.0;
-const EFFICIENCY_TOP_N = 10;
 
 function isBillable(model) {
   if (!model) return false;
@@ -1854,7 +1857,7 @@ function clamp(value, low = 0, high = 100) {
   return Math.max(low, Math.min(high, value));
 }
 
-function computeEfficiencyRankings(rows, topN = EFFICIENCY_TOP_N) {
+function computeEfficiencyRankings(rows, topN = null) {
   if (!rows || !rows.length) return [];
   const prepared = rows.map(row => {
     const turns = Math.max(0, Number(row.turns || 0));
@@ -1893,6 +1896,7 @@ function computeEfficiencyRankings(rows, topN = EFFICIENCY_TOP_N) {
     if (b.turns !== a.turns) return b.turns - a.turns;
     return String(a.id || a.project || '').localeCompare(String(b.id || b.project || ''));
   });
+  if (topN === null || topN === undefined) return ranking;
   return ranking.slice(0, topN);
 }
 
@@ -2036,6 +2040,7 @@ function initThemeToggle() {
 function setRange(range) {
   selectedRange = range;
   sessionsPage = 1;
+  rankingSessionsPage = 1;
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
   );
@@ -2100,6 +2105,7 @@ function onModelToggle(cb) {
   if (cb.checked) { selectedModels.add(cb.value);    label.classList.add('checked'); }
   else            { selectedModels.delete(cb.value); label.classList.remove('checked'); }
   sessionsPage = 1;
+  rankingSessionsPage = 1;
   updateURL();
   applyFilter();
 }
@@ -2109,6 +2115,7 @@ function selectAllModels() {
     cb.checked = true; selectedModels.add(cb.value); cb.closest('label').classList.add('checked');
   });
   sessionsPage = 1;
+  rankingSessionsPage = 1;
   updateURL(); applyFilter();
 }
 
@@ -2117,6 +2124,7 @@ function clearAllModels() {
     cb.checked = false; selectedModels.delete(cb.value); cb.closest('label').classList.remove('checked');
   });
   sessionsPage = 1;
+  rankingSessionsPage = 1;
   updateURL(); applyFilter();
 }
 
@@ -2133,6 +2141,7 @@ function updateURL() {
 // ── Session sort ───────────────────────────────────────────────────────────
 function setSessionSort(col) {
   sessionsPage = 1;
+  rankingSessionsPage = 1;
   if (sessionSortCol === col) {
     sessionSortDir = sessionSortDir === 'desc' ? 'asc' : 'desc';
   } else {
@@ -2207,6 +2216,36 @@ function renderSessionsPager(paged) {
       <span class="pager-label">Página ${paged.page} de ${paged.totalPages}</span>
       <button class="pager-btn" onclick="setSessionsPage(${paged.page + 1})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Próxima &rsaquo;</button>
       <button class="pager-btn" onclick="setSessionsPage(${paged.totalPages})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Última &raquo;</button>
+    </div>
+  `;
+}
+
+function renderCurrentRankingSessionsPage() {
+  const paged = paginateSessions(lastRankingSessions, rankingSessionsPage, RANKING_SESSIONS_PAGE_SIZE);
+  rankingSessionsPage = paged.page;
+  renderEfficiencySessionRanking(paged.items);
+  renderRankingSessionsPager(paged);
+}
+
+function setRankingSessionsPage(nextPage) {
+  rankingSessionsPage = nextPage;
+  renderCurrentRankingSessionsPage();
+}
+
+function renderRankingSessionsPager(paged) {
+  const el = document.getElementById('ranking-sessions-pager');
+  if (!el) return;
+  const hasRows = paged.total > 0;
+  const from = hasRows ? ((paged.page - 1) * RANKING_SESSIONS_PAGE_SIZE + 1) : 0;
+  const to = hasRows ? (from + paged.items.length - 1) : 0;
+  el.innerHTML = `
+    <div>${hasRows ? `Mostrando ${from}-${to} de ${paged.total} sessões no ranking` : 'Nenhuma sessão encontrada para os filtros atuais.'}</div>
+    <div class="pager">
+      <button class="pager-btn" onclick="setRankingSessionsPage(1)" ${paged.page <= 1 ? 'disabled' : ''}>&laquo; Primeira</button>
+      <button class="pager-btn" onclick="setRankingSessionsPage(${paged.page - 1})" ${paged.page <= 1 ? 'disabled' : ''}>&lsaquo; Anterior</button>
+      <span class="pager-label">Página ${paged.page} de ${paged.totalPages}</span>
+      <button class="pager-btn" onclick="setRankingSessionsPage(${paged.page + 1})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Próxima &rsaquo;</button>
+      <button class="pager-btn" onclick="setRankingSessionsPage(${paged.totalPages})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Última &raquo;</button>
     </div>
   `;
 }
@@ -2349,12 +2388,13 @@ function applyFilter() {
   renderProjectChart(byProject);
   renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
   lastFilteredSessions = sortSessions(filteredSessions);
+  lastRankingSessions = rankingSessions;
   lastByProject = sortProjects(byProject);
   renderCurrentSessionsPage();
   renderModelCostTable(byModel);
   renderProjectCostSummary(lastByProject);
   renderProjectCostTable(lastByProject);
-  renderEfficiencySessionRanking(rankingSessions);
+  renderCurrentRankingSessionsPage();
   renderEfficiencyProjectRanking(rankingProjects);
 }
 
@@ -2795,9 +2835,16 @@ function renderProjectCostSummary(allProjects) {
 function renderEfficiencySessionRanking(rankingSessions) {
   const body = document.getElementById('ranking-sessions-body');
   if (!body) return;
-  body.innerHTML = (rankingSessions || []).map(item => `
+  body.innerHTML = (rankingSessions || []).map(item => {
+    const fullSessionId = String(item.id || '');
+    const shortSessionId = fullSessionId ? `${fullSessionId.slice(0, 8)}&hellip;` : esc(item.label || '');
+    const sessionURL = fullSessionId ? `/session/${encodeURIComponent(fullSessionId)}` : '';
+    const sessionCell = fullSessionId
+      ? `<a class="session-link" href="${sessionURL}">${shortSessionId}</a>`
+      : esc(item.label || item.id || '');
+    return `
     <tr>
-      <td class="muted" style="font-family:monospace">${esc(item.label || item.id || '')}</td>
+      <td class="muted" style="font-family:monospace">${sessionCell}</td>
       <td>${esc(item.project || '-')}</td>
       <td class="num"><strong>${item.score_total.toFixed(2)}</strong></td>
       <td class="muted">OI ${item.subscores.output_input.toFixed(1)} · Cache ${item.subscores.cache_read_pct.toFixed(1)} · Custo ${item.subscores.cost_per_turn.toFixed(1)}${item.subscores.turns_per_min !== undefined ? ` · TPM ${item.subscores.turns_per_min.toFixed(1)}` : ''}</td>
@@ -2806,7 +2853,8 @@ function renderEfficiencySessionRanking(rankingSessions) {
       <td class="num">${fmtPct(item.cacheReadPct || 0)}</td>
       <td class="num">${fmt(item.turns || 0)}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderEfficiencyProjectRanking(rankingProjects) {
