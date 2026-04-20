@@ -870,7 +870,7 @@ def render_session_history_html(session_data):
 <style>
 {GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
-    --bg: #0f1117;
+    --bg: #050505;
     --card: #1a1d27;
     --border: #2a2d3a;
     --text: #e2e8f0;
@@ -960,7 +960,7 @@ def render_session_history_html(session_data):
 <style>
 {GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
-    --bg: #0f1117;
+    --bg: #050505;
     --card: #1a1d27;
     --border: #2a2d3a;
     --text: #e2e8f0;
@@ -1243,7 +1243,7 @@ def render_hour_sessions_html(data):
   <style>
 {GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
-      --bg: #0f1117;
+      --bg: #050505;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
@@ -1365,7 +1365,7 @@ def render_hour_sessions_html(data):
   <style>
 {GLOBAL_LOADER_CSS}
     :root, [data-theme="dark"] {{
-      --bg: #0f1117;
+      --bg: #050505;
       --card: #1a1d27;
       --border: #2a2d3a;
       --text: #e2e8f0;
@@ -1484,7 +1484,7 @@ def render_ranking_help_html():
 <style>
 {GLOBAL_LOADER_CSS}
   :root, [data-theme="dark"] {{
-    --bg: #0f1117;
+    --bg: #050505;
     --card: #1a1d27;
     --border: #2a2d3a;
     --text: #e2e8f0;
@@ -1639,7 +1639,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <style>
 """ + GLOBAL_LOADER_CSS + r"""
   :root, [data-theme="dark"] {
-    --bg: #0f1117;
+    --bg: #050505;
     --card: #1a1d27;
     --border: #2a2d3a;
     --text: #e2e8f0;
