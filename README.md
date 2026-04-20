@@ -176,12 +176,43 @@ O **score total** é a média simples dos subscores disponíveis.
 
 ## Arquivos
 
-| Arquivo | Finalidade |
-|------|---------|
-| `scanner.py` | Processa transcrições JSONL e grava em `~/.claude/usage.db` |
-| `dashboard.py` | Servidor HTTP + dashboard HTML/JS de página única |
-| `cli.py` | Comandos `scan`, `today`, `stats`, `insights`, `dashboard` |
-| `live_usage.py` | Captura `claude` + `/usage` via terminal e exibe em aba web dedicada |
+### Convenção de arquitetura (explícita)
+
+```text
+src/
+  frontend/
+    templates/
+      pages/          # templates de páginas completas
+      components/     # componentes reaproveitáveis
+    static/
+      css/
+      js/
+      images/
+  backend/
+    app.py            # ponto de entrada/boot do servidor
+    config.py         # configuração (HOST, PORT, paths)
+    routes/           # handlers HTTP por rota
+    services/         # regras de negócio
+    repositories/     # acesso a dados
+```
+
+### Mapa de rotas e ownership
+
+| Rota | Arquivo de rota (owner backend) | Template de página (owner frontend) |
+|---|---|---|
+| `/` | `src/backend/routes/dashboard.py` | `src/frontend/templates/pages/dashboard.html` |
+| `/live-usage` | `src/backend/routes/live_usage.py` | `src/frontend/templates/pages/live_usage.html` |
+| `/api/data` | `src/backend/routes/dashboard.py` | n/a (JSON) |
+| `/api/live-usage` | `src/backend/routes/live_usage.py` | n/a (JSON) |
+
+### Fluxo de request (resumo)
+
+1. `src/backend/app.py` inicia o servidor HTTP.
+2. `DashboardHandler` resolve a rota no módulo dedicado em `src/backend/routes/`.
+3. Rotas de API chamam `services/` e, quando necessário, `repositories/`.
+4. Rotas de página retornam templates em `src/frontend/templates/pages/`.
+5. Assets estáticos são servidos de `src/frontend/static/{css,js,images}`.
+
 
 
 ## Exportação de relatórios

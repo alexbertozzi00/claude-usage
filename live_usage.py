@@ -32,7 +32,7 @@ CURRENT_WEEK_RE = re.compile(
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "src" / "frontend" / "templates"
 STATIC_DIR = BASE_DIR / "src" / "frontend" / "static"
-LIVE_USAGE_HTML = (TEMPLATES_DIR / "live_usage.html").read_text(encoding="utf-8")
+LIVE_USAGE_HTML = (TEMPLATES_DIR / "pages" / "live_usage.html").read_text(encoding="utf-8")
 
 
 

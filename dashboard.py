@@ -22,7 +22,9 @@ from cli import calc_cost
 from src.backend.config import DB_PATH, HOST, PORT
 from src.backend.repositories.dashboard_repository import ensure_custom_name_column, ensure_has_tool_marker_column
 from src.backend.services.dashboard_service import compute_efficiency_rankings, rename_session as service_rename_session
-from src.backend.routes.dashboard_routes import handle_get, handle_post
+from src.backend.routes.dashboard import handle_get
+from src.backend.routes.live_usage import handle_live_usage_get
+from src.backend.routes.dashboard_routes import handle_post
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "src" / "frontend" / "templates"
@@ -38,13 +40,13 @@ def _read_asset(*parts):
 
 
 COMMON_LAYOUT_STYLES = _read_asset(STATIC_DIR, "css", "common-layout.css")
-HEADER_THEME_TOGGLE_HTML = _read_asset(TEMPLATES_DIR, "partials", "theme-toggle.html")
-GLOBAL_LOADER_HTML = _read_asset(TEMPLATES_DIR, "partials", "global-loader.html")
+HEADER_THEME_TOGGLE_HTML = _read_asset(TEMPLATES_DIR, "components", "theme-toggle.html")
+GLOBAL_LOADER_HTML = _read_asset(TEMPLATES_DIR, "components", "global-loader.html")
 GLOBAL_LOADER_CSS = _read_asset(STATIC_DIR, "css", "global-loader.css")
 GLOBAL_NAVIGATION_LOADER_SCRIPT = "<script>" + _read_asset(STATIC_DIR, "js", "global-navigation-loader.js") + "</script>"
-APP_HEADER_TEMPLATE = _read_asset(TEMPLATES_DIR, "partials", "app-header.html")
-APP_FOOTER_TEMPLATE = _read_asset(TEMPLATES_DIR, "partials", "app-footer.html")
-LIVE_USAGE_HTML = _read_asset(TEMPLATES_DIR, "live_usage.html")
+APP_HEADER_TEMPLATE = _read_asset(TEMPLATES_DIR, "components", "app-header.html")
+APP_FOOTER_TEMPLATE = _read_asset(TEMPLATES_DIR, "components", "app-footer.html")
+LIVE_USAGE_HTML = _read_asset(TEMPLATES_DIR, "pages", "live_usage.html")
 
 
 def render_app_header(title, subtitle="", back_href="/", back_label="← Voltar ao painel", show_back_link=True, right_html=""):
@@ -3768,7 +3770,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         handled = handle_get(self, parsed, {
             "HTML_TEMPLATE": HTML_TEMPLATE,
-            "LIVE_USAGE_HTML": LIVE_USAGE_HTML,
             "get_dashboard_data": get_dashboard_data,
             "get_sessions_for_hour": get_sessions_for_hour,
             "get_session_history": get_session_history,
@@ -3777,7 +3778,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "render_ranking_help_html": render_ranking_help_html,
             "render_trend_help_html": render_trend_help_html,
             "parse_qs": parse_qs,
+            "json_dumps": json.dumps,
         })
+        if not handled:
+            handled = handle_live_usage_get(self, parsed, {
+                "LIVE_USAGE_HTML": LIVE_USAGE_HTML,
+                "json_dumps": json.dumps,
+            })
         if not handled:
             self.send_response(404)
             self.end_headers()
