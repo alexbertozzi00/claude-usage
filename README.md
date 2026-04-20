@@ -165,6 +165,7 @@ O **score total** é a média simples dos subscores disponíveis.
 
 - **Quanto maior, melhor**: em geral indica melhor equilíbrio entre reutilização de cache, custo por interação e rendimento de saída.
 - O ranking é relativo ao recorte atual (período + modelos selecionados).
+- Para uma explicação guiada dos indicadores no dashboard, use a página de ajuda em **`/ranking/help`**, com leitura prática de score, Output/Input, `% Cache Read`, `Cost/Turn` e `Interações`.
 
 ### Limitações
 

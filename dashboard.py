@@ -1303,6 +1303,131 @@ def render_hour_sessions_html(data):
 </html>"""
 
 
+def render_ranking_help_html():
+    header_html = render_app_header(
+        "Como interpretar o ranking",
+        subtitle="Guia rápido dos indicadores de eficiência",
+        back_href="/",
+        back_label="← Voltar ao dashboard",
+        show_back_link=True,
+        right_html=HEADER_THEME_TOGGLE_HTML,
+    )
+    footer_html = render_app_footer()
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<title>ClaudeFlow - Ajuda do Ranking</title>
+<style>
+  :root, [data-theme="dark"] {{
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #d97757;
+    --link: #6aa6ff;
+    --code-bg: rgba(255, 255, 255, 0.03);
+    --toggle-bg: #1f2330;
+    --toggle-text: #dbe6ff;
+  }}
+  [data-theme="light"] {{
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --border: #d6deea;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #c55f3c;
+    --link: #1d4ed8;
+    --code-bg: #f8fafc;
+    --toggle-bg: #eef2ff;
+    --toggle-text: #1e293b;
+  }}
+  * {{ box-sizing: border-box; }}
+{COMMON_LAYOUT_STYLES}
+  body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+  .wrap {{ width: min(1100px, 100%); margin: 0 auto; padding: clamp(16px, 3vw, 28px); }}
+  .panel {{ background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: clamp(16px, 2.4vw, 24px); }}
+  h1 {{ margin: 0 0 12px; font-size: 26px; line-height: 1.2; }}
+  h2 {{ margin: 24px 0 8px; font-size: 20px; color: var(--accent); }}
+  h3 {{ margin: 14px 0 6px; font-size: 16px; }}
+  p {{ margin: 0 0 10px; color: var(--muted); line-height: 1.6; }}
+  .score-box {{ margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg); }}
+  .score-title {{ margin: 0 0 6px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }}
+  code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--text); }}
+  .metric-grid {{ display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }}
+  .metric-card {{ border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--code-bg); }}
+  .metric-card p {{ margin-bottom: 0; }}
+  a {{ color: var(--link); text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  @media (min-width: 860px) {{
+    .metric-grid {{ grid-template-columns: 1fr 1fr; }}
+  }}
+</style>
+</head>
+<body>
+{header_html}
+<main class="wrap">
+  <article class="panel">
+    <h1>Como interpretar o ranking de eficiência</h1>
+    <h2>🧠 Como ler o ranking</h2>
+    <p>Use o ranking para comparar sessões e projetos dentro do recorte atual (período e modelos selecionados).</p>
+    <div class="score-box">
+      <p class="score-title">SCORE</p>
+      <code>OI 100.0 · Cache 100.0 · Custo 83.1 · TPM 1.4</code>
+    </div>
+    <div class="metric-grid">
+      <section class="metric-card">
+        <h3>Output/Input</h3>
+        <p>Mede a relação entre tokens de saída e entrada. Valores mais altos indicam maior rendimento de saída por token de input.</p>
+      </section>
+      <section class="metric-card">
+        <h3>% Cache Read</h3>
+        <p>Mostra quanto do input veio de leitura de cache. Em geral, percentual maior indica reaproveitamento melhor de contexto já processado.</p>
+      </section>
+      <section class="metric-card">
+        <h3>Cost/Turn</h3>
+        <p>Representa o custo médio por interação. Quanto menor esse valor, melhor é o subscore de custo no ranking.</p>
+      </section>
+      <section class="metric-card">
+        <h3>Interações</h3>
+        <p>Quantidade total de turns no período filtrado. Ajuda a contextualizar se o score veio de amostra pequena ou uso recorrente.</p>
+      </section>
+    </div>
+  </article>
+</main>
+{footer_html}
+<script>
+  const THEME_STORAGE_KEY = 'ccu:theme';
+  const toggleInput = document.getElementById('toggle');
+  const root = document.documentElement;
+  function applyTheme(theme) {{
+    const finalTheme = theme === 'light' ? 'light' : 'dark';
+    root.setAttribute('data-theme', finalTheme);
+    if (toggleInput) toggleInput.checked = finalTheme === 'light';
+  }}
+  function getInitialTheme() {{
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }}
+  function initThemeToggle() {{
+    if (!toggleInput) return;
+    toggleInput.addEventListener('change', (ev) => {{
+      const nextTheme = ev.target.checked ? 'light' : 'dark';
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      applyTheme(nextTheme);
+    }});
+  }}
+  applyTheme(getInitialTheme());
+  document.addEventListener('DOMContentLoaded', initThemeToggle);
+</script>
+</body>
+</html>"""
+
+
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1320,6 +1445,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --muted: #8892a4;
     --accent: #d97757;
     --blue: #4f8ef7;
+    --link: #6aa6ff;
     --green: #4ade80;
     --hover-bg: rgba(255, 255, 255, 0.04);
     --active-bg: rgba(217, 119, 87, 0.18);
@@ -1338,6 +1464,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --muted: #516073;
     --accent: #c2410c;
     --blue: #1d4ed8;
+    --link: #1d4ed8;
     --green: #15803d;
     --hover-bg: rgba(15, 23, 42, 0.05);
     --active-bg: rgba(194, 65, 12, 0.15);
@@ -1533,6 +1660,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .toast.error { border-color: #dc2626; }
   .toast.info { border-color: var(--blue); }
   .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+  .section-title-row { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .secondary-link { color: var(--link, #6aa6ff); text-decoration: none; font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: normal; }
+  .secondary-link:hover { text-decoration: underline; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .section-header .section-title { margin-bottom: 0; }
   .export-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; }
@@ -1666,7 +1796,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
   </div>
   <div class="table-card">
-    <div class="section-title">Ranking de Eficiência — Sessões</div>
+    <div class="section-title section-title-row"><span>Ranking de Eficiência — Sessões</span><a class="secondary-link" href="/ranking/help">Como interpretar este ranking</a></div>
     <table>
       <thead><tr>
         <th class="sortable" onclick="setRankingSessionSort('session')">Sessão <span class="sort-icon" id="rsort-session"></span></th>
@@ -1683,7 +1813,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div id="ranking-sessions-pager" class="table-footer"></div>
   </div>
   <div class="table-card">
-    <div class="section-title">Ranking de Eficiência — Projetos</div>
+    <div class="section-title section-title-row"><span>Ranking de Eficiência — Projetos</span><a class="secondary-link" href="/ranking/help">Como interpretar este ranking</a></div>
     <table>
       <thead><tr>
         <th>Projeto</th>
@@ -3466,6 +3596,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = render_session_history_html(session_data).encode("utf-8")
             status_code = 404 if "error" in session_data else 200
             self.send_response(status_code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/ranking/help":
+            body = render_ranking_help_html().encode("utf-8")
+            self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

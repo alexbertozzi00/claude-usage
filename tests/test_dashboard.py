@@ -421,6 +421,12 @@ class TestDashboardHTTP(unittest.TestCase):
         except urllib.error.HTTPError as e:
             self.assertEqual(e.code, 404)
 
+    def test_ranking_help_page_returns_html(self):
+        url = f"http://127.0.0.1:{self.port}/ranking/help"
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("text/html", resp.headers["Content-Type"])
+
     def test_api_rescan_returns_json(self):
         url = f"http://127.0.0.1:{self.port}/api/rescan"
         req = urllib.request.Request(url, method="POST")
@@ -458,6 +464,10 @@ class TestDashboardHTTP(unittest.TestCase):
     def test_template_mentions_auto_refresh_paused_status(self):
         self.assertIn("Atualização automática: pausada", HTML_TEMPLATE)
         self.assertIn("Atualização automática: ativa", HTML_TEMPLATE)
+
+    def test_template_mentions_ranking_help_link(self):
+        self.assertIn('href="/ranking/help"', HTML_TEMPLATE)
+        self.assertIn("Como interpretar este ranking", HTML_TEMPLATE)
 
     def test_template_mentions_hourly_activity_explanation(self):
         self.assertIn("Atividade por Hora", HTML_TEMPLATE)
