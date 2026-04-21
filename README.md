@@ -70,6 +70,15 @@ cd claude-usage
 python3 cli.py dashboard
 ```
 
+### Docker (opcional)
+```bash
+git clone https://github.com/phuryn/claude-usage
+cd claude-usage
+docker compose up --build
+```
+
+> O `docker-compose.yml` monta `${HOME}/.claude` em `/root/.claude` dentro do container para que o scanner leia os JSONLs e escreva `usage.db` no mesmo local esperado pela aplicação.
+
 ---
 
 ## Uso
