@@ -1653,6 +1653,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .range-btn:last-child { border-right: none; }
   .range-btn:hover { background: var(--hover-bg); color: var(--text); }
   .range-btn.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
+  .filter-checkbox-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .filter-checkbox-inline input { accent-color: var(--accent); }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
   .container > .meta { margin-bottom: 12px; }
@@ -1877,6 +1879,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
+  <div class="filter-sep"></div>
+  <label class="filter-checkbox-inline" title="Inclui no gráfico os dias sem uso com valor zero.">
+    <input type="checkbox" id="toggle-empty-days" checked onchange="onEmptyDaysToggle(this)">
+    Mostrar dias sem uso
+  </label>
 </div>
 
 <div class="container">
@@ -2031,6 +2038,7 @@ function showToast(message, type = 'info') {
 let rawData = null;
 let selectedModels = new Set();
 let selectedRange = '30d';
+let showEmptyDays = true;
 let charts = {};
 let sessionSortCol = 'last';
 let modelSortCol = 'cost';
@@ -2316,10 +2324,39 @@ function getRangeTimestampCutoff(range) {
   return null;
 }
 
+function fillMissingDailyDays(rows, cutoffDay = null) {
+  const dayMap = new Map((rows || []).map(r => [r.day, r]));
+
+  const latestDataDay = getLatestDataDay();
+  const startDay = cutoffDay || (rows && rows.length ? rows[0].day : null);
+  const endDay = latestDataDay || (rows && rows.length ? rows[rows.length - 1].day : null);
+  if (!startDay || !endDay) return rows || [];
+
+  const start = new Date(startDay + 'T00:00:00Z');
+  const end = new Date(endDay + 'T00:00:00Z');
+  if (start > end) return rows || [];
+
+  const filled = [];
+  const cursor = new Date(start.getTime());
+  while (cursor <= end) {
+    const day = cursor.toISOString().slice(0, 10);
+    const existing = dayMap.get(day);
+    filled.push(existing || { day, input: 0, output: 0, cache_read: 0, cache_creation: 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return filled;
+}
+
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
   if (p === '24h') return '1d';
   return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
+}
+
+function readURLShowEmptyDays() {
+  const p = new URLSearchParams(window.location.search).get('show_empty_days');
+  if (p === null) return true;
+  return !['0', 'false', 'no'].includes(String(p).toLowerCase());
 }
 
 function readURLTheme() {
@@ -2364,6 +2401,18 @@ function setRange(range) {
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
   );
+  updateURL();
+  applyFilter();
+}
+
+function syncEmptyDaysToggleUI() {
+  const toggle = document.getElementById('toggle-empty-days');
+  if (!toggle) return;
+  toggle.checked = showEmptyDays;
+}
+
+function onEmptyDaysToggle(cb) {
+  showEmptyDays = Boolean(cb && cb.checked);
   updateURL();
   applyFilter();
 }
@@ -2454,6 +2503,7 @@ function updateURL() {
   const params = new URLSearchParams();
   if (selectedRange !== '30d') params.set('range', selectedRange);
   if (!isDefaultModelSelection(allModels)) params.set('models', Array.from(selectedModels).join(','));
+  if (!showEmptyDays) params.set('show_empty_days', '0');
   const search = params.toString() ? '?' + params.toString() : '';
   history.replaceState(null, '', window.location.pathname + search);
 }
@@ -2599,7 +2649,8 @@ function applyFilter() {
     d.cache_read     += r.cache_read;
     d.cache_creation += r.cache_creation;
   }
-  const daily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
+  const aggregatedDaily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
+  const daily = showEmptyDays ? fillMissingDailyDays(aggregatedDaily, cutoff) : aggregatedDaily;
   const hourlyTokenRows = buildHourlyTokenRows(filteredHourly, cutoff);
   const hourly = buildHourlyTrendRows(filteredHourly, cutoff);
 
@@ -3726,6 +3777,8 @@ async function loadData() {
     if (isFirstLoad) {
       // Restore range from URL, mark active button
       selectedRange = readURLRange();
+      showEmptyDays = readURLShowEmptyDays();
+      syncEmptyDaysToggleUI();
       document.querySelectorAll('.range-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.range === selectedRange)
       );
