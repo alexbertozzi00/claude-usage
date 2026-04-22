@@ -2292,11 +2292,14 @@ function getRangeCutoff(range) {
   if (range === '24h') range = '1d';
   if (range === 'all') return null;
 
-  // "Hoje": ancorar no último dia disponível no payload para evitar
-  // gráficos vazios quando ainda não há dados no dia corrente.
+  // "Hoje": usar o dia corrente local do cliente.
+  // Isso evita puxar sessões antigas quando não houve uso hoje.
   if (range === '1d') {
-    const latestDataDay = getLatestDataDay();
-    return latestDataDay || new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
