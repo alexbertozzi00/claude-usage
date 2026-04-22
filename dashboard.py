@@ -1653,6 +1653,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .range-btn:last-child { border-right: none; }
   .range-btn:hover { background: var(--hover-bg); color: var(--text); }
   .range-btn.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
+  .filter-checkbox-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .filter-checkbox-inline input { accent-color: var(--accent); }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
   .container > .meta { margin-bottom: 12px; }
@@ -1877,6 +1879,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="range-btn" data-range="180d" onclick="setRange('180d')">6m</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">Tudo</button>
   </div>
+  <div class="filter-sep"></div>
+  <label class="filter-checkbox-inline" title="Inclui no gráfico os dias sem uso com valor zero.">
+    <input type="checkbox" id="toggle-empty-days" checked onchange="onEmptyDaysToggle(this)">
+    Mostrar dias sem uso
+  </label>
 </div>
 
 <div class="container">
@@ -2031,6 +2038,7 @@ function showToast(message, type = 'info') {
 let rawData = null;
 let selectedModels = new Set();
 let selectedRange = '30d';
+let showEmptyDays = true;
 let charts = {};
 let sessionSortCol = 'last';
 let modelSortCol = 'cost';
@@ -2345,6 +2353,12 @@ function readURLRange() {
   return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
+function readURLShowEmptyDays() {
+  const p = new URLSearchParams(window.location.search).get('show_empty_days');
+  if (p === null) return true;
+  return !['0', 'false', 'no'].includes(String(p).toLowerCase());
+}
+
 function readURLTheme() {
   const p = new URLSearchParams(window.location.search).get('theme');
   return ['light', 'dark'].includes(p) ? p : null;
@@ -2387,6 +2401,18 @@ function setRange(range) {
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
   );
+  updateURL();
+  applyFilter();
+}
+
+function syncEmptyDaysToggleUI() {
+  const toggle = document.getElementById('toggle-empty-days');
+  if (!toggle) return;
+  toggle.checked = showEmptyDays;
+}
+
+function onEmptyDaysToggle(cb) {
+  showEmptyDays = Boolean(cb && cb.checked);
   updateURL();
   applyFilter();
 }
@@ -2477,6 +2503,7 @@ function updateURL() {
   const params = new URLSearchParams();
   if (selectedRange !== '30d') params.set('range', selectedRange);
   if (!isDefaultModelSelection(allModels)) params.set('models', Array.from(selectedModels).join(','));
+  if (!showEmptyDays) params.set('show_empty_days', '0');
   const search = params.toString() ? '?' + params.toString() : '';
   history.replaceState(null, '', window.location.pathname + search);
 }
@@ -2623,7 +2650,7 @@ function applyFilter() {
     d.cache_creation += r.cache_creation;
   }
   const aggregatedDaily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
-  const daily = fillMissingDailyDays(aggregatedDaily, cutoff);
+  const daily = showEmptyDays ? fillMissingDailyDays(aggregatedDaily, cutoff) : aggregatedDaily;
   const hourlyTokenRows = buildHourlyTokenRows(filteredHourly, cutoff);
   const hourly = buildHourlyTrendRows(filteredHourly, cutoff);
 
@@ -3750,6 +3777,8 @@ async function loadData() {
     if (isFirstLoad) {
       // Restore range from URL, mark active button
       selectedRange = readURLRange();
+      showEmptyDays = readURLShowEmptyDays();
+      syncEmptyDaysToggleUI();
       document.querySelectorAll('.range-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.range === selectedRange)
       );
