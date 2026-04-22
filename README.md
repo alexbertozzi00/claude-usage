@@ -58,21 +58,21 @@ Sem `pip install`, sem ambiente virtual, sem etapa de build.
 
 ### Windows
 ```
-git clone https://github.com/phuryn/claude-usage
+git clone https://github.com/alexbertozzi00/claude-usage
 cd claude-usage
 python cli.py dashboard
 ```
 
 ### macOS / Linux
 ```
-git clone https://github.com/phuryn/claude-usage
+git clone https://github.com/alexbertozzi00/claude-usage
 cd claude-usage
 python3 cli.py dashboard
 ```
 
 ### Docker (opcional)
 ```bash
-git clone https://github.com/phuryn/claude-usage
+git clone https://github.com/alexbertozzi00/claude-usage
 cd claude-usage
 docker compose up --build
 ```
