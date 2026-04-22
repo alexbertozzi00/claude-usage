@@ -2316,6 +2316,29 @@ function getRangeTimestampCutoff(range) {
   return null;
 }
 
+function fillMissingDailyDays(rows, cutoffDay = null) {
+  const dayMap = new Map((rows || []).map(r => [r.day, r]));
+
+  const latestDataDay = getLatestDataDay();
+  const startDay = cutoffDay || (rows && rows.length ? rows[0].day : null);
+  const endDay = latestDataDay || (rows && rows.length ? rows[rows.length - 1].day : null);
+  if (!startDay || !endDay) return rows || [];
+
+  const start = new Date(startDay + 'T00:00:00Z');
+  const end = new Date(endDay + 'T00:00:00Z');
+  if (start > end) return rows || [];
+
+  const filled = [];
+  const cursor = new Date(start.getTime());
+  while (cursor <= end) {
+    const day = cursor.toISOString().slice(0, 10);
+    const existing = dayMap.get(day);
+    filled.push(existing || { day, input: 0, output: 0, cache_read: 0, cache_creation: 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return filled;
+}
+
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
   if (p === '24h') return '1d';
@@ -2599,7 +2622,8 @@ function applyFilter() {
     d.cache_read     += r.cache_read;
     d.cache_creation += r.cache_creation;
   }
-  const daily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
+  const aggregatedDaily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
+  const daily = fillMissingDailyDays(aggregatedDaily, cutoff);
   const hourlyTokenRows = buildHourlyTokenRows(filteredHourly, cutoff);
   const hourly = buildHourlyTrendRows(filteredHourly, cutoff);
 
