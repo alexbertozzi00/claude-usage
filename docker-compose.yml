@@ -1,0 +1,12 @@
+services:
+  claude-usage:
+    build: .
+    container_name: claude-usage
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8082
+    ports:
+      - "8082:8082"
+    volumes:
+      - ${HOME}/.claude:/root/.claude
+    restart: unless-stopped
