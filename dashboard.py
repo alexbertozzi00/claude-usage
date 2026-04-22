@@ -2773,14 +2773,16 @@ function applyFilter() {
 // ── Renderers ──────────────────────────────────────────────────────────────
 function renderStats(t) {
   const rangeLabel = getSelectedRangeLabel().toLowerCase();
+  const totalTokens = (t.input || 0) + (t.output || 0);
   const stats = [
     { label: 'Sessões',       value: t.sessions.toLocaleString(), sub: rangeLabel },
-    { label: 'Interações',          value: fmt(t.turns),                sub: rangeLabel },
-    { label: 'Tokens de Entrada',   value: fmt(t.input),                sub: rangeLabel },
-    { label: 'Tokens de Saída',  value: fmt(t.output),               sub: rangeLabel },
-    { label: 'Leitura de Cache',     value: fmt(t.cache_read),           sub: 'do cache de prompt' },
-    { label: 'Criação de Cache', value: fmt(t.cache_creation),       sub: 'gravações no cache de prompt' },
-    { label: 'Custo Estimado',      value: fmtCostBig(t.cost),          sub: 'preço de API, abr/2026', color: cssVar('--green') },
+    { label: 'Interações',     value: fmt(t.turns),         sub: rangeLabel },
+    { label: 'Tokens Totais',  value: fmt(totalTokens),     sub: 'entrada + saída no período' },
+    { label: 'Tokens de Entrada', value: fmt(t.input),      sub: rangeLabel },
+    { label: 'Tokens de Saída', value: fmt(t.output),       sub: rangeLabel },
+    { label: 'Leitura de Cache', value: fmt(t.cache_read),  sub: 'do cache de prompt' },
+    { label: 'Criação de Cache', value: fmt(t.cache_creation), sub: 'gravações no cache de prompt' },
+    { label: 'Custo Estimado', value: fmtCostBig(t.cost),   sub: 'preço de API, abr/2026', color: cssVar('--green') },
   ];
   document.getElementById('stats-row').innerHTML = stats.map(s => `
     <div class="stat-card">
