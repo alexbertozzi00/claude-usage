@@ -128,6 +128,104 @@ def _display_project_name(project_name):
     return normalized.replace("\\", "/").split("/")[-1] or "unknown"
 
 
+def compute_billing_windows(records, window_hours=5):
+    """Group turn records into consecutive UTC epoch-aligned billing windows.
+
+    Windows are aligned to the UTC epoch: window_id = floor(unix_timestamp / window_seconds).
+    For window_hours=5 this yields windows starting at 0:00, 5:00, 10:00, 15:00, 20:00 UTC
+    each day. All boundary alignment is in UTC, consistent with stored timestamps.
+
+    Args:
+        records: Iterable of dicts or sqlite3.Row objects with keys:
+                 ``timestamp`` (ISO 8601 string, UTC), ``model`` (str),
+                 ``input_tokens`` (int), ``output_tokens`` (int),
+                 ``cache_read_tokens`` (int), ``cache_creation_tokens`` (int).
+        window_hours: Window size in hours (default 5).
+
+    Returns:
+        List of window dicts sorted by ``window_start_iso``, each containing:
+        ``window_id`` (int), ``window_start_iso`` (str), ``window_end_iso`` (str),
+        ``input_tokens`` (int), ``output_tokens`` (int), ``cache_read_tokens`` (int),
+        ``cache_creation_tokens`` (int), ``turns`` (int), ``cost`` (float).
+
+    Example:
+        >>> recs = [
+        ...     {"timestamp": "1970-01-01T00:30:00Z", "model": "claude-sonnet-4-5",
+        ...      "input_tokens": 100, "output_tokens": 50,
+        ...      "cache_read_tokens": 0, "cache_creation_tokens": 0},
+        ...     {"timestamp": "1970-01-01T04:59:00Z", "model": "claude-sonnet-4-5",
+        ...      "input_tokens": 200, "output_tokens": 80,
+        ...      "cache_read_tokens": 0, "cache_creation_tokens": 0},
+        ...     {"timestamp": "1970-01-01T05:00:00Z", "model": "claude-sonnet-4-5",
+        ...      "input_tokens": 50, "output_tokens": 20,
+        ...      "cache_read_tokens": 0, "cache_creation_tokens": 0},
+        ... ]
+        >>> windows = compute_billing_windows(recs)
+        >>> len(windows)  # first two turns share window 0 (00:00–05:00 UTC); third is in window 1
+        2
+        >>> windows[0]["turns"]
+        2
+        >>> windows[1]["turns"]
+        1
+    """
+    window_seconds = window_hours * 3600
+    window_acc = defaultdict(lambda: {
+        "input_tokens": 0, "output_tokens": 0,
+        "cache_read_tokens": 0, "cache_creation_tokens": 0,
+        "turns": 0, "cost": 0.0,
+    })
+
+    for rec in records:
+        ts = rec["timestamp"]
+        if not ts:
+            continue
+        try:
+            normalized = str(ts).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(normalized)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            unix_ts = int(dt.timestamp())
+        except Exception:
+            continue
+
+        window_id = unix_ts // window_seconds
+        bucket = window_acc[window_id]
+
+        inp = int(rec["input_tokens"] or 0)
+        out = int(rec["output_tokens"] or 0)
+        cr = int(rec["cache_read_tokens"] or 0)
+        cc = int(rec["cache_creation_tokens"] or 0)
+        model = rec["model"] or "unknown"
+
+        bucket["input_tokens"] += inp
+        bucket["output_tokens"] += out
+        bucket["cache_read_tokens"] += cr
+        bucket["cache_creation_tokens"] += cc
+        bucket["turns"] += 1
+        bucket["cost"] += calc_cost(model, inp, out, cr, cc)
+
+    result = []
+    for window_id, vals in sorted(window_acc.items()):
+        start_ts = window_id * window_seconds
+        end_ts = (window_id + 1) * window_seconds
+        start_dt = datetime.fromtimestamp(start_ts, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end_ts, tz=timezone.utc)
+        result.append({
+            "window_id": window_id,
+            "window_start_iso": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "window_end_iso": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "input_tokens": vals["input_tokens"],
+            "output_tokens": vals["output_tokens"],
+            "cache_read_tokens": vals["cache_read_tokens"],
+            "cache_creation_tokens": vals["cache_creation_tokens"],
+            "turns": vals["turns"],
+            "cost": round(vals["cost"], 6),
+        })
+    return result
+
+
 def rename_session(session_id, custom_name, db_path=DB_PATH):
     return service_rename_session(session_id=session_id, custom_name=custom_name, db_path=db_path)
 
@@ -314,17 +412,20 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     ranking_sessions = compute_efficiency_rankings(session_ranking_rows)
     ranking_projects = compute_efficiency_rankings(list(project_totals.values()))
 
+    billing_windows = compute_billing_windows(turns_rows)
+
     conn.close()
 
     return {
-        "all_models":     all_models,
-        "daily_by_model": daily_by_model,
+        "all_models":      all_models,
+        "daily_by_model":  daily_by_model,
         "hourly_by_model": hourly_by_model,
-        "project_daily":  project_daily,
-        "sessions_all":   sessions_all,
+        "project_daily":   project_daily,
+        "sessions_all":    sessions_all,
         "ranking_sessions": ranking_sessions,
         "ranking_projects": ranking_projects,
-        "generated_at":   datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "billing_windows": billing_windows,
+        "generated_at":    datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
 
 
@@ -1798,6 +1899,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .insight-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
   .insight-list li { color: var(--text); line-height: 1.5; }
   .insight-list .hint { color: var(--muted); font-size: 12px; }
+  .billing-windows-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .billing-windows-card h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px; }
+  .billing-current-window { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; padding: 14px 16px; background: var(--active-bg); border: 1px solid var(--accent); border-radius: 6px; }
+  .billing-current-window .bw-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+  .billing-current-window .bw-value { font-size: 18px; font-weight: 700; }
+  .billing-current-window .bw-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .billing-current-window .bw-stat { min-width: 100px; }
+  .billing-windows-table-wrap { overflow-x: auto; }
+  .billing-windows-table-wrap table { min-width: 580px; }
+  .billing-window-current-row td { background: var(--active-bg); font-weight: 600; }
   .disclaimer-banner {
     margin: 10px 24px;
     padding: 10px 12px;
@@ -1889,6 +2000,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
+  <div class="billing-windows-card" id="billing-windows-card">
+    <h2 class="th-with-tooltip">Janelas de Faturamento (5 horas) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre janelas de faturamento">?<span class="tooltip-text">O Claude Code usa janelas de faturamento de 5 horas alinhadas ao UTC (0:00, 5:00, 10:00, 15:00, 20:00 UTC). Cada janela acumula os tokens usados naquele intervalo. A janela atual é destacada.</span></span></h2>
+    <div id="billing-current-window"></div>
+    <div class="billing-windows-table-wrap">
+      <table id="billing-windows-table" style="display:none">
+        <thead><tr>
+          <th>Início (UTC)</th>
+          <th>Fim (UTC)</th>
+          <th style="text-align:right">Interações</th>
+          <th style="text-align:right">Entrada</th>
+          <th style="text-align:right">Saída</th>
+          <th style="text-align:right">Cache Leitura</th>
+          <th style="text-align:right">Custo Est.</th>
+        </tr></thead>
+        <tbody id="billing-windows-body"></tbody>
+      </table>
+    </div>
+    <div id="billing-windows-empty" style="display:none;color:var(--muted);font-size:13px;">Nenhuma janela de faturamento encontrada para o período selecionado.</div>
+  </div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
@@ -2751,6 +2881,7 @@ function applyFilter() {
     : 'Uso Diário de Tokens') + ' \u2014 ' + getSelectedRangeLabel();
 
   renderStats(totals);
+  renderBillingWindows(cutoff);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
   renderDailyChart(selectedRange === '1d' ? hourlyTokenRows : daily, selectedRange === '1d' ? 'hourly' : 'daily');
   updateTrendChartVisibility();
@@ -2791,6 +2922,102 @@ function renderStats(t) {
       ${s.sub ? `<div class="sub">${esc(s.sub)}</div>` : ''}
     </div>
   `).join('');
+}
+
+// ── Billing Windows ────────────────────────────────────────────────────────
+function renderBillingWindows(cutoff) {
+  const allWindows = (rawData && rawData.billing_windows) ? rawData.billing_windows : [];
+
+  // Filter by selected date range: compare window_start_iso date part vs cutoff
+  const filtered = cutoff
+    ? allWindows.filter(w => w.window_start_iso.slice(0, 10) >= cutoff)
+    : allWindows;
+
+  // Sort descending (most recent first)
+  const sorted = [...filtered].sort((a, b) => b.window_id - a.window_id);
+
+  // Determine current window ID: floor(now_unix / (5*3600))
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const WINDOW_SECS = 5 * 3600;
+  const currentWindowId = Math.floor(nowUnix / WINDOW_SECS);
+  const currentWindowStartUnix = currentWindowId * WINDOW_SECS;
+  const currentWindowEndUnix = (currentWindowId + 1) * WINDOW_SECS;
+
+  // Format a UTC ISO string for display (dd/MM/YYYY HH:MM UTC)
+  function fmtWindowTime(isoStr) {
+    if (!isoStr) return '-';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return isoStr;
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  }
+
+  // Render "current window" summary card (may be empty if no usage yet)
+  const currentEl = document.getElementById('billing-current-window');
+  const currentWindow = sorted.find(w => w.window_id === currentWindowId);
+
+  const currentStartStr = fmtWindowTime(new Date(currentWindowStartUnix * 1000).toISOString());
+  const currentEndStr   = fmtWindowTime(new Date(currentWindowEndUnix   * 1000).toISOString());
+
+  if (currentEl) {
+    const cw = currentWindow || { turns: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, cost: 0 };
+    currentEl.innerHTML = `
+      <div class="billing-current-window">
+        <div class="bw-stat">
+          <div class="bw-label">Janela Atual</div>
+          <div class="bw-value">${esc(currentStartStr)}</div>
+          <div class="bw-sub">até ${esc(currentEndStr)}</div>
+        </div>
+        <div class="bw-stat">
+          <div class="bw-label">Interações</div>
+          <div class="bw-value">${fmt(cw.turns)}</div>
+          <div class="bw-sub">na janela atual</div>
+        </div>
+        <div class="bw-stat">
+          <div class="bw-label">Tokens Totais</div>
+          <div class="bw-value">${fmt((cw.input_tokens || 0) + (cw.output_tokens || 0))}</div>
+          <div class="bw-sub">entrada + saída</div>
+        </div>
+        <div class="bw-stat">
+          <div class="bw-label">Custo Est.</div>
+          <div class="bw-value" style="color:${cssVar('--green')}">${fmtCostBig(cw.cost || 0)}</div>
+          <div class="bw-sub">preço de API</div>
+        </div>
+        <div class="bw-stat">
+          <div class="bw-label">Janelas no Período</div>
+          <div class="bw-value">${sorted.length}</div>
+          <div class="bw-sub">${getSelectedRangeLabel().toLowerCase()}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const tableEl = document.getElementById('billing-windows-table');
+  const bodyEl  = document.getElementById('billing-windows-body');
+  const emptyEl = document.getElementById('billing-windows-empty');
+
+  if (!tableEl || !bodyEl || !emptyEl) return;
+
+  if (sorted.length === 0) {
+    tableEl.style.display = 'none';
+    emptyEl.style.display = '';
+    return;
+  }
+
+  tableEl.style.display = '';
+  emptyEl.style.display = 'none';
+  bodyEl.innerHTML = sorted.map(w => {
+    const isCurrent = w.window_id === currentWindowId;
+    return `<tr class="${isCurrent ? 'billing-window-current-row' : ''}">
+      <td>${esc(fmtWindowTime(w.window_start_iso))}</td>
+      <td>${esc(fmtWindowTime(w.window_end_iso))}</td>
+      <td style="text-align:right">${fmt(w.turns)}</td>
+      <td style="text-align:right">${fmt(w.input_tokens)}</td>
+      <td style="text-align:right">${fmt(w.output_tokens)}</td>
+      <td style="text-align:right">${fmt(w.cache_read_tokens)}</td>
+      <td style="text-align:right">${fmtCost(w.cost || 0)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderInsights(totals, byModel, byProject, peakDay, lowDay) {
