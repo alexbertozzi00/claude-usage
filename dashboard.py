@@ -2001,25 +2001,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="meta" id="meta">Carregando...</div>
   <div class="stats-row" id="stats-row"></div>
-  <div class="billing-windows-card" id="billing-windows-card">
-    <h2 class="th-with-tooltip">Janelas de Faturamento (5 horas) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre janelas de faturamento">?<span class="tooltip-text">O Claude Code usa janelas de faturamento de 5 horas alinhadas ao UTC (0:00, 5:00, 10:00, 15:00, 20:00 UTC). Cada janela acumula os tokens usados naquele intervalo. A janela atual é destacada.</span></span></h2>
-    <div id="billing-current-window"></div>
-    <div class="billing-windows-table-wrap">
-      <table id="billing-windows-table" style="display:none">
-        <thead><tr>
-          <th>Início (UTC)</th>
-          <th>Fim (UTC)</th>
-          <th style="text-align:right">Interações</th>
-          <th style="text-align:right">Entrada</th>
-          <th style="text-align:right">Saída</th>
-          <th style="text-align:right">Cache Leitura</th>
-          <th style="text-align:right">Custo Est.</th>
-        </tr></thead>
-        <tbody id="billing-windows-body"></tbody>
-      </table>
-    </div>
-    <div id="billing-windows-empty" style="display:none;color:var(--muted);font-size:13px;">Nenhuma janela de faturamento encontrada para o período selecionado.</div>
-  </div>
   <div class="insights-card">
     <div class="section-title">Insights Acionáveis</div>
     <ul id="insights-list" class="insight-list"></ul>
@@ -2046,6 +2027,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div id="hourly-activity-meta" class="hourly-meta"></div>
       <div id="hourly-activity-list" class="hourly-list"></div>
     </div>
+  </div>
+  <div class="billing-windows-card" id="billing-windows-card">
+    <h2 class="th-with-tooltip">Janelas de Faturamento (5 horas) <span class="tooltip" tabindex="0" aria-label="Ajuda sobre janelas de faturamento">?<span class="tooltip-text">O Claude Code usa janelas de faturamento de 5 horas alinhadas ao UTC (0:00, 5:00, 10:00, 15:00, 20:00 UTC). Cada janela acumula os tokens usados naquele intervalo. A janela atual é destacada.</span></span></h2>
+    <div id="billing-current-window"></div>
+    <div class="billing-windows-table-wrap">
+      <table id="billing-windows-table" style="display:none">
+        <thead><tr>
+          <th>Início (UTC)</th>
+          <th>Fim (UTC)</th>
+          <th style="text-align:right">Interações</th>
+          <th style="text-align:right">Entrada</th>
+          <th style="text-align:right">Saída</th>
+          <th style="text-align:right">Cache Leitura</th>
+          <th style="text-align:right">Custo Est.</th>
+        </tr></thead>
+        <tbody id="billing-windows-body"></tbody>
+      </table>
+    </div>
+    <div id="billing-windows-empty" style="display:none;color:var(--muted);font-size:13px;">Nenhuma janela de faturamento encontrada para o período selecionado.</div>
+    <div id="billing-windows-pager" class="table-footer"></div>
   </div>
   <div class="table-card">
     <div class="section-title section-title-row"><span>Ranking de Eficiência — Sessões</span><a class="secondary-link" href="/ranking/help">Como interpretar este ranking</a></div>
@@ -2184,6 +2185,7 @@ let lastByProject = [];
 let sessionSortDir = 'desc';
 let sessionsPage = 1;
 const SESSIONS_PAGE_SIZE = 15;
+let billingWindowsPage = 1;
 let rankingSessionsPage = 1;
 const RANKING_SESSIONS_PAGE_SIZE = 15;
 const renamingSessions = new Set();
@@ -2528,6 +2530,7 @@ function initThemeToggle() {
 function setRange(range) {
   selectedRange = range;
   sessionsPage = 1;
+  billingWindowsPage = 1;
   rankingSessionsPage = 1;
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
@@ -2605,6 +2608,7 @@ function onModelToggle(cb) {
   if (cb.checked) { selectedModels.add(cb.value);    label.classList.add('checked'); }
   else            { selectedModels.delete(cb.value); label.classList.remove('checked'); }
   sessionsPage = 1;
+  billingWindowsPage = 1;
   rankingSessionsPage = 1;
   updateURL();
   applyFilter();
@@ -2615,6 +2619,7 @@ function selectAllModels() {
     cb.checked = true; selectedModels.add(cb.value); cb.closest('label').classList.add('checked');
   });
   sessionsPage = 1;
+  billingWindowsPage = 1;
   rankingSessionsPage = 1;
   updateURL(); applyFilter();
 }
@@ -2624,6 +2629,7 @@ function clearAllModels() {
     cb.checked = false; selectedModels.delete(cb.value); cb.closest('label').classList.remove('checked');
   });
   sessionsPage = 1;
+  billingWindowsPage = 1;
   rankingSessionsPage = 1;
   updateURL(); applyFilter();
 }
@@ -2642,6 +2648,7 @@ function updateURL() {
 // ── Session sort ───────────────────────────────────────────────────────────
 function setSessionSort(col) {
   sessionsPage = 1;
+  billingWindowsPage = 1;
   rankingSessionsPage = 1;
   if (sessionSortCol === col) {
     sessionSortDir = sessionSortDir === 'desc' ? 'asc' : 'desc';
@@ -2996,18 +3003,23 @@ function renderBillingWindows(cutoff) {
   const tableEl = document.getElementById('billing-windows-table');
   const bodyEl  = document.getElementById('billing-windows-body');
   const emptyEl = document.getElementById('billing-windows-empty');
+  const pagerEl = document.getElementById('billing-windows-pager');
 
-  if (!tableEl || !bodyEl || !emptyEl) return;
+  if (!tableEl || !bodyEl || !emptyEl || !pagerEl) return;
 
   if (sorted.length === 0) {
     tableEl.style.display = 'none';
     emptyEl.style.display = '';
+    pagerEl.innerHTML = '';
     return;
   }
 
   tableEl.style.display = '';
   emptyEl.style.display = 'none';
-  bodyEl.innerHTML = sorted.map(w => {
+
+  const paged = paginateSessions(sorted, billingWindowsPage, SESSIONS_PAGE_SIZE);
+  billingWindowsPage = paged.page;
+  bodyEl.innerHTML = paged.items.map(w => {
     const isCurrent = w.window_id === currentWindowId;
     return `<tr class="${isCurrent ? 'billing-window-current-row' : ''}">
       <td>${esc(fmtWindowTime(w.window_start_iso))}</td>
@@ -3019,6 +3031,31 @@ function renderBillingWindows(cutoff) {
       <td style="text-align:right">${fmtCost(w.cost || 0)}</td>
     </tr>`;
   }).join('');
+
+  renderBillingWindowsPager(paged);
+}
+
+function setBillingWindowsPage(nextPage) {
+  billingWindowsPage = nextPage;
+  renderBillingWindows(getRangeCutoff(selectedRange));
+}
+
+function renderBillingWindowsPager(paged) {
+  const el = document.getElementById('billing-windows-pager');
+  if (!el) return;
+  const hasRows = paged.total > 0;
+  const from = hasRows ? ((paged.page - 1) * SESSIONS_PAGE_SIZE + 1) : 0;
+  const to = hasRows ? (from + paged.items.length - 1) : 0;
+  el.innerHTML = `
+    <div>${hasRows ? `Mostrando ${from}-${to} de ${paged.total} janelas` : 'Nenhuma janela de faturamento encontrada para os filtros atuais.'}</div>
+    <div class="pager">
+      <button class="pager-btn" onclick="setBillingWindowsPage(1)" ${paged.page <= 1 ? 'disabled' : ''}>&laquo; Primeira</button>
+      <button class="pager-btn" onclick="setBillingWindowsPage(${paged.page - 1})" ${paged.page <= 1 ? 'disabled' : ''}>&lsaquo; Anterior</button>
+      <span class="pager-label">Página ${paged.page} de ${paged.totalPages}</span>
+      <button class="pager-btn" onclick="setBillingWindowsPage(${paged.page + 1})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Próxima &rsaquo;</button>
+      <button class="pager-btn" onclick="setBillingWindowsPage(${paged.totalPages})" ${paged.page >= paged.totalPages ? 'disabled' : ''}>Última &raquo;</button>
+    </div>
+  `;
 }
 
 function renderInsights(totals, byModel, byProject, peakDay, lowDay) {
