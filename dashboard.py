@@ -1767,6 +1767,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .pager-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pager-label { min-width: 100px; text-align: center; }
   .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; overflow-x: auto; }
+  .table-card.table-card--no-overflow { overflow-x: visible; }
   .hourly-list {
     max-height: 320px;
     overflow-y: auto;
@@ -1933,7 +1934,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </table>
     <div id="ranking-sessions-pager" class="table-footer"></div>
   </div>
-  <div class="table-card">
+  <div class="table-card table-card--no-overflow">
     <div class="section-title section-title-row"><span>Ranking de Eficiência — Projetos</span><a class="secondary-link" href="/ranking/help">Como interpretar este ranking</a></div>
     <table>
       <thead><tr>
