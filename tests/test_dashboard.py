@@ -14,6 +14,7 @@ from pathlib import Path
 from scanner import get_db, init_db, upsert_sessions, insert_turns
 from dashboard import (
     compute_efficiency_rankings,
+    compute_billing_windows,
     get_dashboard_data,
     get_sessions_for_hour,
     get_session_history,
@@ -622,6 +623,182 @@ class TestPricingParity(unittest.TestCase):
                 CLI_PRICING[model]["output"], js_prices[model]["output"],
                 msg=f"{model} output price mismatch"
             )
+
+
+
+
+class TestComputeBillingWindows(unittest.TestCase):
+    """Tests for compute_billing_windows() — the 5-hour UTC-aligned window aggregation."""
+
+    def _make_turn(self, timestamp, input_tokens=100, output_tokens=50,
+                   cache_read_tokens=0, cache_creation_tokens=0, model="claude-sonnet-4-5"):
+        return {
+            "timestamp": timestamp,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "cache_creation_tokens": cache_creation_tokens,
+        }
+
+    def test_empty_records_returns_empty_list(self):
+        self.assertEqual(compute_billing_windows([]), [])
+
+    def test_single_turn_produces_one_window(self):
+        records = [self._make_turn("2024-01-01T00:30:00Z")]
+        windows = compute_billing_windows(records)
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0]["turns"], 1)
+        self.assertEqual(windows[0]["input_tokens"], 100)
+        self.assertEqual(windows[0]["output_tokens"], 50)
+
+    def test_two_turns_same_window(self):
+        """Two timestamps within the same 5-hour block fall into one window."""
+        # Use epoch-relative timestamps: both in window 0 (1970-01-01T00:00 – 1970-01-01T05:00)
+        records = [
+            self._make_turn("1970-01-01T00:30:00Z", input_tokens=100, output_tokens=50),
+            self._make_turn("1970-01-01T04:59:00Z", input_tokens=200, output_tokens=80),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0]["turns"], 2)
+        self.assertEqual(windows[0]["input_tokens"], 300)
+        self.assertEqual(windows[0]["output_tokens"], 130)
+
+    def test_boundary_split_into_two_windows(self):
+        """Turn at exactly 05:00:00 UTC (epoch+5h) is in the next window vs one at 04:59:59 UTC."""
+        # The epoch is a clean boundary: window 0 = [00:00:00, 05:00:00), window 1 = [05:00:00, 10:00:00)
+        records = [
+            self._make_turn("1970-01-01T04:59:59Z"),
+            self._make_turn("1970-01-01T05:00:00Z"),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertEqual(len(windows), 2)
+        self.assertEqual(windows[0]["turns"], 1)
+        self.assertEqual(windows[1]["turns"], 1)
+
+    def test_windows_sorted_by_start_ascending(self):
+        records = [
+            self._make_turn("2024-01-01T10:00:00Z"),
+            self._make_turn("2024-01-01T00:00:00Z"),
+            self._make_turn("2024-01-01T05:00:00Z"),
+        ]
+        windows = compute_billing_windows(records)
+        starts = [w["window_start_iso"] for w in windows]
+        self.assertEqual(starts, sorted(starts))
+
+    def test_window_start_end_correct_for_first_window_of_day(self):
+        """At the UTC epoch the first window runs from 00:00:00 to 05:00:00 UTC."""
+        records = [self._make_turn("1970-01-01T02:00:00Z")]
+        windows = compute_billing_windows(records)
+        self.assertEqual(windows[0]["window_start_iso"], "1970-01-01T00:00:00Z")
+        self.assertEqual(windows[0]["window_end_iso"], "1970-01-01T05:00:00Z")
+
+    def test_window_boundaries_are_5h_aligned(self):
+        """Windows always start at multiples of 5h from the UTC epoch."""
+        records = [self._make_turn("1970-01-01T07:30:00Z")]
+        windows = compute_billing_windows(records)
+        # 07:30 falls in the 05:00–10:00 window (second 5h block from epoch)
+        self.assertEqual(windows[0]["window_start_iso"], "1970-01-01T05:00:00Z")
+        self.assertEqual(windows[0]["window_end_iso"], "1970-01-01T10:00:00Z")
+
+    def test_invalid_timestamps_are_skipped(self):
+        records = [
+            {"timestamp": "not-a-date", "model": "claude-sonnet-4-5",
+             "input_tokens": 100, "output_tokens": 50,
+             "cache_read_tokens": 0, "cache_creation_tokens": 0},
+            self._make_turn("2024-01-01T00:00:00Z"),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0]["turns"], 1)
+
+    def test_empty_timestamp_is_skipped(self):
+        records = [
+            {"timestamp": "", "model": "claude-sonnet-4-5",
+             "input_tokens": 10, "output_tokens": 5,
+             "cache_read_tokens": 0, "cache_creation_tokens": 0},
+            self._make_turn("2024-01-01T00:00:00Z"),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertEqual(len(windows), 1)
+
+    def test_cost_is_computed_per_model(self):
+        """Non-billable models yield zero cost; billable models yield positive cost."""
+        records = [
+            self._make_turn("2024-01-01T00:00:00Z", model="claude-opus-4-5",
+                            input_tokens=1000, output_tokens=500),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertGreater(windows[0]["cost"], 0.0)
+
+    def test_non_billable_model_has_zero_cost(self):
+        records = [
+            self._make_turn("2024-01-01T00:00:00Z", model="unknown",
+                            input_tokens=1000, output_tokens=500),
+        ]
+        windows = compute_billing_windows(records)
+        self.assertEqual(windows[0]["cost"], 0.0)
+
+    def test_window_fields_present(self):
+        records = [self._make_turn("2024-01-01T00:00:00Z")]
+        window = compute_billing_windows(records)[0]
+        for field in ("window_id", "window_start_iso", "window_end_iso",
+                      "input_tokens", "output_tokens", "cache_read_tokens",
+                      "cache_creation_tokens", "turns", "cost"):
+            self.assertIn(field, window, f"Missing field: {field}")
+
+    def test_get_dashboard_data_includes_billing_windows(self):
+        """Verify get_dashboard_data() includes billing_windows in its return value."""
+        tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmpfile.close()
+        db_path = Path(tmpfile.name)
+        try:
+            from scanner import get_db, init_db, upsert_sessions, insert_turns
+            conn = get_db(db_path)
+            init_db(conn)
+            upsert_sessions(conn, [{
+                "session_id": "sess-bw-test",
+                "project_name": "user/proj",
+                "first_timestamp": "2026-04-08T09:00:00Z",
+                "last_timestamp": "2026-04-08T10:00:00Z",
+                "git_branch": "main",
+                "model": "claude-sonnet-4-6",
+                "total_input_tokens": 100,
+                "total_output_tokens": 50,
+                "total_cache_read": 0,
+                "total_cache_creation": 0,
+                "turn_count": 1,
+            }])
+            insert_turns(conn, [{
+                "session_id": "sess-bw-test",
+                "timestamp": "2026-04-08T09:30:00Z",
+                "model": "claude-sonnet-4-6",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "has_tool_marker": 0,
+                "tool_name": None,
+                "cwd": "/tmp",
+            }])
+            conn.commit()
+            conn.close()
+
+            data = get_dashboard_data(db_path=db_path)
+            self.assertIn("billing_windows", data)
+            self.assertIsInstance(data["billing_windows"], list)
+            self.assertEqual(len(data["billing_windows"]), 1)
+            w = data["billing_windows"][0]
+            self.assertEqual(w["turns"], 1)
+            self.assertEqual(w["input_tokens"], 100)
+            self.assertEqual(w["output_tokens"], 50)
+            # Window should contain 09:30 UTC on 2026-04-08
+            # Actual epoch-aligned boundary: starts at 2026-04-08T06:00:00Z
+            self.assertEqual(w["window_start_iso"], "2026-04-08T06:00:00Z")
+            self.assertEqual(w["window_end_iso"], "2026-04-08T11:00:00Z")
+        finally:
+            os.unlink(db_path)
 
 
 if __name__ == "__main__":
