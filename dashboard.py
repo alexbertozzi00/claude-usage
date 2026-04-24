@@ -1759,7 +1759,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
   .container > .meta { margin-bottom: 12px; }
-  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
   .stat-card {
     background: var(--card);
     border: 1px solid var(--border);
