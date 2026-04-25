@@ -54,8 +54,22 @@ class TestGetDashboardData(unittest.TestCase):
             "session_id": "sess-abc123", "timestamp": "2026-04-08T09:30:00Z",
             "model": "claude-sonnet-4-6", "input_tokens": 500,
             "output_tokens": 200, "cache_read_tokens": 50,
-            "cache_creation_tokens": 20, "has_tool_marker": 0, "tool_name": None, "cwd": "/tmp",
+            "cache_creation_tokens": 20, "has_tool_marker": 0, "tool_name": None, "cwd": "/tmp", "provider": "claude_code",
+        }, {
+            "session_id": "codex-sess-1", "timestamp": "2026-04-08T10:30:00Z",
+            "model": "codex-pro", "input_tokens": 300,
+            "output_tokens": 100, "cache_read_tokens": 0,
+            "cache_creation_tokens": 0, "has_tool_marker": 0, "tool_name": None, "cwd": "/tmp", "provider": "codex",
         }]
+        upsert_sessions(conn, [{
+            "session_id": "codex-sess-1", "provider": "codex", "project_name": "codex/project",
+            "first_timestamp": "2026-04-08T10:00:00Z",
+            "last_timestamp": "2026-04-08T10:30:00Z",
+            "git_branch": "main", "model": "codex-pro",
+            "total_input_tokens": 300, "total_output_tokens": 100,
+            "total_cache_read": 0, "total_cache_creation": 0,
+            "turn_count": 1,
+        }])
         insert_turns(conn, turns)
         conn.commit()
         conn.close()
@@ -86,6 +100,11 @@ class TestGetDashboardData(unittest.TestCase):
     def test_models_populated(self):
         data = get_dashboard_data(db_path=self.db_path)
         self.assertIn("claude-sonnet-4-6", data["all_models"])
+    def test_provider_filter_codex(self):
+        data = get_dashboard_data(db_path=self.db_path, provider="codex")
+        self.assertEqual(data["provider"], "codex")
+        self.assertEqual(len(data["sessions_all"]), 1)
+        self.assertEqual(data["sessions_all"][0]["provider"], "codex")
 
     def test_sessions_populated(self):
         data = get_dashboard_data(db_path=self.db_path)
@@ -413,6 +432,20 @@ class TestDashboardHTTP(unittest.TestCase):
             data = json.loads(resp.read())
             # Should have expected keys (or error if no DB)
             self.assertTrue("all_models" in data or "error" in data)
+
+    def test_api_data_accepts_provider_query(self):
+        url = f"http://127.0.0.1:{self.port}/api/data?provider=all"
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("application/json", resp.headers["Content-Type"])
+
+    def test_api_providers_returns_json(self):
+        url = f"http://127.0.0.1:{self.port}/api/providers"
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("application/json", resp.headers["Content-Type"])
+            data = json.loads(resp.read())
+            self.assertIn("providers", data)
 
     def test_hour_page_returns_html(self):
         url = f"http://127.0.0.1:{self.port}/hour/09"

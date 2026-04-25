@@ -1,6 +1,7 @@
 """HTTP route handlers for live usage page and API."""
 
 from dataclasses import asdict
+from urllib.parse import parse_qs
 
 from live_usage import capture_usage
 
@@ -16,7 +17,9 @@ def handle_live_usage_get(handler, parsed, deps):
         return True
 
     if parsed.path == "/api/live-usage":
-        payload = deps["json_dumps"](asdict(capture_usage()), ensure_ascii=False).encode("utf-8")
+        qs = parse_qs(parsed.query or "")
+        provider = (qs.get("provider", ["claude"])[0] or "claude").strip().lower()
+        payload = deps["json_dumps"](asdict(capture_usage(provider=provider)), ensure_ascii=False).encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Content-Length", str(len(payload)))

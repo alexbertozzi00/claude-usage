@@ -9,10 +9,18 @@
 <body>
 <div class="wrap">
   <div class="head">
-    <h1>Uso ao vivo do Claude CLI (/usage)</h1>
-    <button class="btn" onclick="reloadNow()">Atualizar agora</button>
+    <h1>Uso ao vivo do CLI (/usage)</h1>
+    <div class="actions">
+      <label class="provider-label" for="provider-select">Provider:</label>
+      <select id="provider-select" class="provider-select" onchange="onProviderChange()">
+        <option value="claude">Claude</option>
+        <option value="codex">Codex</option>
+      </select>
+      <button class="btn" onclick="reloadNow()">Atualizar agora</button>
+    </div>
   </div>
   <p class="muted" id="meta">Carregando...</p>
+  <p class="muted" id="validation"></p>
   <div class="grid">
     <div class="card">
       <div class="title">Current session</div>

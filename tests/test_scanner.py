@@ -233,6 +233,56 @@ class TestMessageIdDedup(unittest.TestCase):
         self.assertEqual(token_sums, [100, 200])
 
 
+class TestProviderSchema(unittest.TestCase):
+    def test_parse_jsonl_file_sets_default_provider(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "s.jsonl"
+            path.write_text(_make_assistant_record(session_id="s-provider-1") + "\n", encoding="utf-8")
+            metas, turns, _ = parse_jsonl_file(str(path))
+            self.assertEqual(metas[0]["provider"], "claude_code")
+            self.assertEqual(turns[0]["provider"], "claude_code")
+
+    def test_message_id_unique_per_provider(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "usage.db"
+            conn = get_db(db_path)
+            init_db(conn)
+            insert_turns(conn, [
+                {
+                    "provider": "claude_code",
+                    "session_id": "s1",
+                    "timestamp": "2026-04-08T10:00:00Z",
+                    "model": "claude-sonnet-4-6",
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "cache_read_tokens": 0,
+                    "cache_creation_tokens": 0,
+                    "has_tool_marker": 0,
+                    "tool_name": None,
+                    "cwd": "/tmp",
+                    "message_id": "msg-same",
+                },
+                {
+                    "provider": "codex",
+                    "session_id": "s2",
+                    "timestamp": "2026-04-08T10:01:00Z",
+                    "model": "codex-pro",
+                    "input_tokens": 9,
+                    "output_tokens": 4,
+                    "cache_read_tokens": 0,
+                    "cache_creation_tokens": 0,
+                    "has_tool_marker": 0,
+                    "tool_name": None,
+                    "cwd": "/tmp",
+                    "message_id": "msg-same",
+                },
+            ])
+            conn.commit()
+            rows = conn.execute("SELECT COUNT(*) as cnt FROM turns WHERE message_id = 'msg-same'").fetchone()
+            conn.close()
+            self.assertEqual(rows["cnt"], 2)
+
+
 class TestMessageIdDedupIntegration(unittest.TestCase):
     """Integration test: dedup across scan cycles."""
 

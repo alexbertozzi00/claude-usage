@@ -27,6 +27,12 @@ CURRENT_WEEK_RE = re.compile(
     r"Current\s+week\s*\(all\s+models\).*?(?P<used>\d{1,3})%\s*used.*?Resets\s+(?P<resets>.+?)(?:\n|\r)",
     re.IGNORECASE | re.DOTALL,
 )
+USED_PERCENT_RE = re.compile(r"\b(\d{1,3})%\s*used\b", re.IGNORECASE)
+
+SUPPORTED_USAGE_PROVIDERS = {
+    "claude": {"command": ["claude"], "label": "Claude CLI"},
+    "codex": {"command": ["codex"], "label": "Codex CLI"},
+}
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "src" / "frontend" / "templates"
@@ -44,10 +50,12 @@ class UsageBlock:
 
 @dataclass
 class UsageSnapshot:
+    provider: str
     ok: bool
     captured_at: str
     current_session: UsageBlock
     current_week: UsageBlock
+    validation: dict
     raw_excerpt: str = ""
     error: str = ""
 
@@ -72,13 +80,67 @@ def _parse_block(pattern: re.Pattern[str], payload: str) -> UsageBlock:
     )
 
 
-def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
+def _normalize_provider(provider: str | None) -> str:
+    name = (provider or "").strip().lower()
+    if name in SUPPORTED_USAGE_PROVIDERS:
+        return name
+    return "claude"
+
+
+def _build_validation(payload: str, current_session: UsageBlock, current_week: UsageBlock) -> dict:
+    return {
+        "has_percent_markers": bool(USED_PERCENT_RE.search(payload)),
+        "has_current_session": current_session.used_percent is not None,
+        "has_current_week": current_week.used_percent is not None,
+        "line_count": len([line for line in payload.splitlines() if line.strip()]),
+    }
+
+
+def _snapshot_from_clean_payload(provider: str, clean_payload: str, *, captured_at: str, found_used: bool) -> UsageSnapshot:
+    current_session = _parse_block(CURRENT_SESSION_RE, clean_payload)
+    current_week = _parse_block(CURRENT_WEEK_RE, clean_payload)
+    validation = _build_validation(clean_payload, current_session, current_week)
+    ok = bool(found_used and (validation["has_current_session"] or validation["has_current_week"]))
+
+    return UsageSnapshot(
+        provider=provider,
+        ok=ok,
+        captured_at=captured_at,
+        current_session=current_session,
+        current_week=current_week,
+        validation=validation,
+        raw_excerpt=clean_payload[-1200:],
+        error="" if ok else "Não foi possível extrair os dados de /usage.",
+    )
+
+
+def parse_usage_payload(payload: str, provider: str = "claude") -> UsageSnapshot:
+    normalized_provider = _normalize_provider(provider)
+    captured_at = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    clean_payload = _strip_ansi(payload or "")
+    found_used = "% used" in clean_payload.lower()
+    return _snapshot_from_clean_payload(
+        normalized_provider,
+        clean_payload,
+        captured_at=captured_at,
+        found_used=found_used,
+    )
+
+
+def capture_usage(timeout_seconds: float = 12.0, provider: str = "claude") -> UsageSnapshot:
+    normalized_provider = _normalize_provider(provider)
+    provider_info = SUPPORTED_USAGE_PROVIDERS[normalized_provider]
+    command = provider_info["command"]
+    command_label = provider_info["label"]
+
     if os.name == "nt":
         return UsageSnapshot(
+            provider=normalized_provider,
             ok=False,
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
+            validation={},
             error="Live usage não é suportado no Windows (requer PTY/termios).",
         )
 
@@ -88,7 +150,7 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
 
     try:
         proc = subprocess.Popen(
-            ["claude"],
+            command,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
@@ -99,11 +161,13 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
         os.close(master_fd)
         os.close(slave_fd)
         return UsageSnapshot(
+            provider=normalized_provider,
             ok=False,
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
-            error="Comando 'claude' não encontrado no PATH.",
+            validation={},
+            error=f"Comando '{command[0]}' não encontrado no PATH ({command_label}).",
         )
 
     os.close(slave_fd)
@@ -136,11 +200,13 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
         time.sleep(0.2)
     except Exception as exc:
         return UsageSnapshot(
+            provider=normalized_provider,
             ok=False,
             captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             current_session=UsageBlock(),
             current_week=UsageBlock(),
-            error=f"Falha ao capturar saída do Claude CLI: {exc}",
+            validation={},
+            error=f"Falha ao capturar saída do {command_label}: {exc}",
         )
     finally:
         try:
@@ -153,17 +219,11 @@ def capture_usage(timeout_seconds: float = 12.0) -> UsageSnapshot:
     raw = b"".join(chunks).decode("utf-8", errors="replace")
     clean = _strip_ansi(raw)
 
-    current_session = _parse_block(CURRENT_SESSION_RE, clean)
-    current_week = _parse_block(CURRENT_WEEK_RE, clean)
-    ok = bool(found_used and (current_session.used_percent is not None or current_week.used_percent is not None))
-
-    return UsageSnapshot(
-        ok=ok,
+    return _snapshot_from_clean_payload(
+        normalized_provider,
+        clean,
         captured_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        current_session=current_session,
-        current_week=current_week,
-        raw_excerpt=clean[-1200:],
-        error="" if ok else "Não foi possível extrair os dados de /usage.",
+        found_used=found_used,
     )
 
 
