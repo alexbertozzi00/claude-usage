@@ -1224,10 +1224,12 @@ def render_hour_sessions_html(data):
     if cutoff_ts:
         cutoff = escape(_format_timestamp(cutoff_ts))
     models = data.get("models") or []
+    provider = (data.get("provider") or "claude_code").strip()
+    provider_label = "Claude" if provider == "claude_code" else ("Codex" if provider == "codex" else "Todos")
     models_text = ", ".join(escape(m) for m in models) if models else "todos"
     header_html = render_app_header(
         f"Sessões no horário {hour}",
-        subtitle=f"Período: {cutoff} · Modelos: {models_text}",
+        subtitle=f"Provider: {provider_label} · Período: {cutoff} · Modelos: {models_text}",
         show_back_link=False,
         right_html=HEADER_THEME_TOGGLE_HTML,
     )
@@ -1243,9 +1245,10 @@ def render_hour_sessions_html(data):
         input_tokens = int(s["input"] or 0)
         output_tokens = int(s["output"] or 0)
         label = custom if custom else sid
+        provider_qs = escape(provider)
         rows.append(
             f"<tr>"
-            f"<td><a href=\"/session/{sid_full}\">{label}</a></td>"
+            f"<td><a href=\"/session/{sid_full}?provider={provider_qs}\">{label}</a></td>"
             f"<td>{project}</td>"
             f"<td>{model}</td>"
             f"<td>{turns_at_hour}</td>"
@@ -1810,6 +1813,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   #filter-bar { background: var(--card); border-bottom: 1px solid var(--border); padding: 10px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .filter-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); white-space: nowrap; }
+  .provider-select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 12px; min-width: 130px; }
   .filter-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
   #model-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
   .model-cb-label { display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; font-size: 12px; color: var(--muted); transition: border-color 0.15s, color 0.15s, background 0.15s; user-select: none; }
@@ -2046,6 +2050,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </header>
 
 <div id="filter-bar">
+  <div class="filter-label">Provider</div>
+  <select id="provider-select" class="provider-select" onchange="onProviderChange(this)">
+    <option value="claude_code">Claude</option>
+    <option value="codex">Codex</option>
+    <option value="all">Todos</option>
+  </select>
+  <div class="filter-sep"></div>
   <div class="filter-label">Modelos</div>
   <div id="model-checkboxes"></div>
   <button class="filter-btn" onclick="selectAllModels()">Todos</button>
@@ -2239,6 +2250,7 @@ function showToast(message, type = 'info') {
 let rawData = null;
 let selectedModels = new Set();
 let selectedRange = '30d';
+let selectedProvider = 'claude_code';
 let showEmptyDays = true;
 let charts = {};
 let sessionSortCol = 'last';
@@ -2269,11 +2281,12 @@ let isAutoRefreshPaused = false;
 function updateMetaStatus() {
   const meta = document.getElementById('meta');
   if (!meta) return;
+  const providerLabel = selectedProvider === 'codex' ? 'Codex' : (selectedProvider === 'all' ? 'Todos' : 'Claude');
   const generatedLabel = latestGeneratedAt ? ('Atualizado em: ' + latestGeneratedAt) : 'Atualizado em: -';
   const refreshLabel = isAutoRefreshPaused
     ? 'Atualização automática: pausada'
     : ('Atualização automática: ativa (em ' + autoRefreshCountdown + 's)');
-  meta.textContent = generatedLabel + ' \u00b7 ' + refreshLabel;
+  meta.textContent = 'Provider: ' + providerLabel + ' \u00b7 ' + generatedLabel + ' \u00b7 ' + refreshLabel;
 }
 
 function updateAutoRefreshToggleUI() {
@@ -2555,10 +2568,31 @@ function readURLRange() {
   return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
+function readURLProvider() {
+  const p = new URLSearchParams(window.location.search).get('provider');
+  return ['claude_code', 'codex', 'all'].includes(p) ? p : 'claude_code';
+}
+
 function readURLShowEmptyDays() {
   const p = new URLSearchParams(window.location.search).get('show_empty_days');
   if (p === null) return true;
   return !['0', 'false', 'no'].includes(String(p).toLowerCase());
+}
+
+function syncProviderUI() {
+  const providerSelect = document.getElementById('provider-select');
+  if (!providerSelect) return;
+  providerSelect.value = selectedProvider;
+}
+
+function onProviderChange(selectEl) {
+  const value = (selectEl && selectEl.value) ? selectEl.value : 'claude_code';
+  selectedProvider = ['claude_code', 'codex', 'all'].includes(value) ? value : 'claude_code';
+  sessionsPage = 1;
+  billingWindowsPage = 1;
+  rankingSessionsPage = 1;
+  updateURL();
+  loadData();
 }
 
 function readURLTheme() {
@@ -2707,6 +2741,7 @@ function clearAllModels() {
 function updateURL() {
   const allModels = Array.from(document.querySelectorAll('#model-checkboxes input')).map(cb => cb.value);
   const params = new URLSearchParams();
+  if (selectedProvider !== 'claude_code') params.set('provider', selectedProvider);
   if (selectedRange !== '30d') params.set('range', selectedRange);
   if (!isDefaultModelSelection(allModels)) params.set('models', Array.from(selectedModels).join(','));
   if (!showEmptyDays) params.set('show_empty_days', '0');
@@ -3408,7 +3443,8 @@ function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
   const selectedModelsParam = encodeURIComponent(Array.from(selectedModels).join(','));
   const cutoffParam = encodeURIComponent(cutoff || '');
   const cutoffTsParam = encodeURIComponent(cutoffTs || '');
-  const buildHourURL = (hour) => `/hour/${hour}?cutoff=${cutoffParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
+  const providerParam = encodeURIComponent(selectedProvider || 'claude_code');
+  const buildHourURL = (hour) => `/hour/${hour}?provider=${providerParam}&cutoff=${cutoffParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
 
   container.innerHTML = withAverages.map(r => {
     const widthPct = (r.avgTokens / maxTokens) * 100;
@@ -3441,7 +3477,7 @@ function renderSessionsTable(sessions) {
       ? `<td class="cost">${fmtCost(cost)}</td>`
       : `<td class="cost-na">não se aplica</td>`;
     const sessionName = s.custom_name || '';
-    const sessionURL = '/session/' + encodeURIComponent(s.session_id_full);
+    const sessionURL = '/session/' + encodeURIComponent(s.session_id_full) + '?provider=' + encodeURIComponent(selectedProvider || 'claude_code');
     const isSaving = renamingSessions.has(s.session_id_full);
     return `<tr>
       <td class="muted" style="font-family:monospace"><a class="session-link" href="${sessionURL}">${esc(s.session_id)}&hellip;</a></td>
@@ -3658,7 +3694,7 @@ function renderEfficiencySessionRanking(rankingSessions) {
   body.innerHTML = (rankingSessions || []).map(item => {
     const fullSessionId = String(item.id || '');
     const shortSessionId = fullSessionId ? `${fullSessionId.slice(0, 8)}&hellip;` : esc(item.label || '');
-    const sessionURL = fullSessionId ? `/session/${encodeURIComponent(fullSessionId)}` : '';
+    const sessionURL = fullSessionId ? `/session/${encodeURIComponent(fullSessionId)}?provider=${encodeURIComponent(selectedProvider || 'claude_code')}` : '';
     const sessionCell = fullSessionId
       ? `<a class="session-link" href="${sessionURL}">${shortSessionId}</a>`
       : esc(item.label || item.id || '');
@@ -4097,7 +4133,12 @@ async function hideGlobalLoadingWithMinimumDelay() {
 async function loadData() {
   setGlobalLoading(true);
   try {
-    const resp = await fetch('/api/data');
+    if (rawData === null) {
+      selectedProvider = readURLProvider();
+      syncProviderUI();
+    }
+    const providerQuery = encodeURIComponent(selectedProvider || 'claude_code');
+    const resp = await fetch('/api/data?provider=' + providerQuery);
     const d = await resp.json();
     if (d.error) {
       document.body.innerHTML = '<div style="padding:40px;color:#f87171">' + esc(d.error) + '</div>';
@@ -4112,17 +4153,23 @@ async function loadData() {
 
     if (isFirstLoad) {
       // Restore range from URL, mark active button
+      selectedProvider = readURLProvider();
       selectedRange = readURLRange();
       showEmptyDays = readURLShowEmptyDays();
+      syncProviderUI();
       syncEmptyDaysToggleUI();
       document.querySelectorAll('.range-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.range === selectedRange)
       );
-      // Build model filter (reads URL for model selection too)
-      buildFilterUI(d.all_models);
       updateSortIcons();
       updateModelSortIcons();
       updateProjectSortIcons();
+    }
+    // Build model filter (reads URL for model selection too)
+    buildFilterUI(d.all_models);
+    if (!isFirstLoad && d.provider) {
+      selectedProvider = d.provider;
+      syncProviderUI();
     }
 
     applyFilter();

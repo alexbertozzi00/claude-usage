@@ -147,6 +147,8 @@ O `scanner.py` processa esses arquivos e armazena os dados em um banco SQLite em
 
 O `dashboard.py` serve um dashboard de página única em `localhost:8082` com gráficos Chart.js (carregados via CDN). Ele se atualiza automaticamente a cada 30 segundos, com opção de pausar/retomar a atualização automática da página, e suporta filtro por modelo com URLs que podem ser salvas/favoritadas. O dashboard também aplica **loading inicial** ao abrir a página e **loading de navegação** ao trocar de rota/tela interna para dar feedback visual durante carregamentos. O endereço de bind e a porta podem ser sobrescritos com variáveis de ambiente `HOST` e `PORT` (padrões: `localhost`, `8082`).
 
+Na própria UI do dashboard (opção recomendada), há seletor global de provider (**Claude / Codex / Todos**) para comparar uso no mesmo painel sem abrir outro dashboard.
+
 ---
 
 ## Estimativas de custo
