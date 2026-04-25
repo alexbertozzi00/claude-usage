@@ -80,6 +80,54 @@ class TestCodexScanner(unittest.TestCase):
         self.assertEqual(result["events"], 1)
         self.assertEqual(result["totals"]["output_tokens"], 12)
 
+    def test_parses_rollout_token_count_with_nested_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs_dir = root / ".codex" / "sessions" / "2026" / "04" / "24"
+            logs_dir.mkdir(parents=True)
+            log_file = logs_dir / "rollout-1.jsonl"
+            log_file.write_text(
+                "\n".join([
+                    json.dumps({
+                        "timestamp": "2026-04-24T21:00:00Z",
+                        "item": {
+                            "type": "session_meta",
+                            "id": "sess-rollout-1",
+                            "model": "codex-mini",
+                        },
+                    }),
+                    json.dumps({
+                        "timestamp": "2026-04-24T21:02:00Z",
+                        "item": {
+                            "type": "event_msg",
+                            "payload": {
+                                "type": "token_count",
+                                "info": {
+                                    "input_tokens": 321,
+                                    "output_tokens": 123,
+                                    "cache_creation_input_tokens": 40,
+                                    "cache_read_input_tokens": 20,
+                                },
+                            },
+                        },
+                    }),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+
+            with patch("codex_scanner.capture_usage") as mock_capture:
+                result = scan_codex_usage(logs_dirs=[root / ".codex"])
+
+            self.assertEqual(result["source"], "local_logs")
+            self.assertEqual(result["events"], 1)
+            self.assertEqual(result["sessions"], 1)
+            self.assertEqual(result["totals"]["input_tokens"], 321)
+            self.assertEqual(result["totals"]["output_tokens"], 123)
+            self.assertEqual(result["totals"]["cache_creation_tokens"], 40)
+            self.assertEqual(result["totals"]["cache_read_tokens"], 20)
+            self.assertEqual(result["models"], ["codex-mini"])
+            mock_capture.assert_not_called()
+
 
 class TestCodexCliArgs(unittest.TestCase):
     def test_parse_codex_scan_args(self):
