@@ -3,6 +3,7 @@ cli.py - Command-line interface for the Claude Code usage dashboard.
 
 Commands:
   scan      - Scan JSONL files and update the database
+  codex-scan - Run layered Codex usage ingestion (MVP)
   today     - Print today's usage summary
   stats     - Print all-time usage statistics
   insights  - Print actionable efficiency insights
@@ -109,6 +110,49 @@ def require_db():
 def cmd_scan(projects_dir=None):
     from scanner import scan
     scan(projects_dir=Path(projects_dir) if projects_dir else None)
+
+
+def cmd_codex_scan(codex_dir=None, import_file=None, output=None, no_db=False):
+    from codex_scanner import ingest_codex_to_db, scan_codex_usage
+
+    logs_dirs = [Path(codex_dir)] if codex_dir else None
+    if no_db:
+        result = scan_codex_usage(logs_dirs=logs_dirs, manual_import_file=import_file)
+        result["db_ingest"] = {"inserted_turns": 0, "inserted_sessions": 0}
+    else:
+        result = ingest_codex_to_db(logs_dirs=logs_dirs, manual_import_file=import_file)
+
+    print()
+    hr("=")
+    print("  Codex Usage Ingestion (MVP)")
+    hr("=")
+    print(f"  Source used:       {result.get('source')}")
+    print(f"  Events:            {result.get('events')}")
+    print(f"  Sessions:          {result.get('sessions')}")
+    print(f"  Models:            {', '.join(result.get('models') or []) or '-'}")
+    totals = result.get("totals", {})
+    print(f"  Input tokens:      {totals.get('input_tokens', 0)}")
+    print(f"  Output tokens:     {totals.get('output_tokens', 0)}")
+    print(f"  Cache read tokens: {totals.get('cache_read_tokens', 0)}")
+    print(f"  Cache create toks: {totals.get('cache_creation_tokens', 0)}")
+    db_ingest = result.get("db_ingest", {})
+    print(f"  DB turns inseridos: {db_ingest.get('inserted_turns', 0)}")
+    print(f"  DB sessões inseridas: {db_ingest.get('inserted_sessions', 0)}")
+    if result.get("errors"):
+        print("  Warnings:")
+        for err in result["errors"]:
+            print(f"    - {err}")
+    hr("=")
+    print()
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        export_payload = dict(result)
+        export_payload.pop("events_payload", None)
+        export_payload.setdefault("preview", export_payload.get("preview", []))
+        out_path.write_text(json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Codex report saved: {out_path}")
 
 
 def cmd_today():
@@ -613,6 +657,7 @@ Claude Code Usage Dashboard
 
 Usage:
   python cli.py scan [--projects-dir PATH]   Scan JSONL files and update database
+  python cli.py codex-scan [--codex-dir PATH] [--import-file FILE] [--output FILE] [--no-db]
   python cli.py today                        Show today's usage summary
   python cli.py stats                        Show all-time statistics
   python cli.py insights                     Show actionable efficiency insights
@@ -623,6 +668,7 @@ Usage:
 
 COMMANDS = {
     "scan": cmd_scan,
+    "codex-scan": cmd_codex_scan,
     "today": cmd_today,
     "stats": cmd_stats,
     "insights": cmd_insights,
@@ -663,6 +709,31 @@ def parse_export_args(args):
     return parsed
 
 
+def parse_codex_scan_args(args):
+    parsed = {"codex_dir": None, "import_file": None, "output": None, "no_db": False}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--no-db":
+            parsed["no_db"] = True
+            i += 1
+            continue
+        if arg in ("--codex-dir", "--import-file", "--output"):
+            if i + 1 >= len(args):
+                raise ValueError(f"Missing value for {arg}")
+            value = args[i + 1]
+            if arg == "--codex-dir":
+                parsed["codex_dir"] = value
+            elif arg == "--import-file":
+                parsed["import_file"] = value
+            elif arg == "--output":
+                parsed["output"] = value
+            i += 2
+            continue
+        raise ValueError(f"Unknown codex-scan argument: {arg}")
+    return parsed
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         print(USAGE)
@@ -679,6 +750,14 @@ if __name__ == "__main__":
     elif command == "export":
         try:
             options = parse_export_args(sys.argv[2:])
+            COMMANDS[command](**options)
+        except ValueError as e:
+            print(f"Error: {e}")
+            print(USAGE)
+            sys.exit(1)
+    elif command == "codex-scan":
+        try:
+            options = parse_codex_scan_args(sys.argv[2:])
             COMMANDS[command](**options)
         except ValueError as e:
             print(f"Error: {e}")

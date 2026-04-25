@@ -101,8 +101,14 @@ python cli.py insights
 # Executa scan + abre o dashboard no navegador em http://localhost:8082
 python cli.py dashboard
 
-# Abre uma aba dedicada que captura "claude" + "/usage" (scraping de curto prazo)
+# Abre uma aba dedicada que captura /usage para Claude e Codex (scraping de curto prazo)
 python cli.py live-usage
+
+# Ingestão Codex (MVP em camadas: logs locais -> CLI -> import manual)
+python cli.py codex-scan
+
+# Ingestão Codex usando diretório personalizado e arquivo de import manual
+python cli.py codex-scan --codex-dir ~/.codex --import-file ./codex-usage.csv --output ./reports/codex-usage.json
 
 # Host e porta personalizados via variáveis de ambiente
 HOST=0.0.0.0 PORT=9000 python cli.py dashboard
@@ -121,6 +127,8 @@ python cli.py export --format json --period custom --start 2026-04-01 --end 2026
 ```
 
 O scanner é incremental — ele rastreia o caminho e o tempo de modificação de cada arquivo, então rodar `scan` novamente é rápido e processa apenas arquivos novos ou alterados.
+
+Na página **Live Usage**, há um seletor de provider (Claude/Codex). A captura usa o comando correspondente no PATH (`claude` ou `codex`) e mostra o status de validação do parsing (blocos detectados e quantidade de linhas capturadas).
 
 Por padrão, o scanner verifica `~/.claude/projects/` e também o diretório de integração Claude no Xcode (`~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/projects/`), ignorando os que não existirem. Use `--projects-dir` para varrer um local personalizado.
 
@@ -212,7 +220,10 @@ src/
 | `/` | `src/backend/routes/dashboard.py` | `src/frontend/templates/pages/dashboard.html` |
 | `/live-usage` | `src/backend/routes/live_usage.py` | `src/frontend/templates/pages/live_usage.html` |
 | `/api/data` | `src/backend/routes/dashboard.py` | n/a (JSON) |
+| `/api/providers` | `src/backend/routes/dashboard.py` | n/a (JSON) |
 | `/api/live-usage` | `src/backend/routes/live_usage.py` | n/a (JSON) |
+
+`/api/data` aceita `?provider=claude_code|codex|all` para filtrar os dados do dashboard por provider.
 
 ### Fluxo de request (resumo)
 

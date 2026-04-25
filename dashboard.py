@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sqlite3
+import shutil
 import subprocess
 from dataclasses import asdict
 from html import escape
@@ -230,9 +231,15 @@ def rename_session(session_id, custom_name, db_path=DB_PATH):
     return service_rename_session(session_id=session_id, custom_name=custom_name, db_path=db_path)
 
 
-def get_dashboard_data(db_path=DB_PATH, local_tz=None):
+def _normalize_provider_filter(provider):
+    value = (provider or "claude_code").strip().lower()
+    return value if value in {"claude_code", "codex", "all"} else "claude_code"
+
+
+def get_dashboard_data(db_path=DB_PATH, local_tz=None, provider="claude_code"):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado. Execute: python cli.py scan"}
+    provider = _normalize_provider_filter(provider)
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -242,8 +249,15 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     # ── All models (for filter UI) ────────────────────────────────────────────
     all_models = fetch_model_catalog(conn)
 
+    turns_where = ""
+    turns_params = []
+    if provider != "all":
+        turns_where = "WHERE COALESCE(t.provider, 'claude_code') = ?"
+        turns_params.append(provider)
+
     turns_rows = conn.execute("""
         SELECT
+            COALESCE(t.provider, 'claude_code') as provider,
             t.timestamp as timestamp,
             COALESCE(t.model, 'unknown') as model,
             t.input_tokens as input_tokens,
@@ -253,8 +267,10 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
             COALESCE(t.has_tool_marker, 0) as has_tool_marker,
             COALESCE(s.project_name, 'unknown') as project_name
         FROM turns t
-        LEFT JOIN sessions s ON s.session_id = t.session_id
-    """).fetchall()
+        LEFT JOIN sessions s ON s.session_id = t.session_id AND COALESCE(s.provider, 'claude_code') = COALESCE(t.provider, 'claude_code')
+    """ + turns_where, tuple(turns_params)).fetchall()
+    if provider != "all":
+        all_models = sorted({(row["model"] or "unknown") for row in turns_rows})
 
     daily_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
     hourly_acc = defaultdict(lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "turns": 0})
@@ -324,14 +340,21 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     } for (day, model, project), vals in sorted(project_daily_acc.items())]
 
     # ── All sessions (client filters by range and model) ──────────────────────
+    sessions_where = ""
+    sessions_params = []
+    if provider != "all":
+        sessions_where = "WHERE COALESCE(provider, 'claude_code') = ?"
+        sessions_params.append(provider)
+
     session_rows = conn.execute("""
         SELECT
-            session_id, project_name, first_timestamp, last_timestamp,
+            session_id, COALESCE(provider, 'claude_code') as provider, project_name, first_timestamp, last_timestamp,
             total_input_tokens, total_output_tokens,
             total_cache_read, total_cache_creation, model, turn_count, custom_name
         FROM sessions
+        """ + sessions_where + """
         ORDER BY last_timestamp DESC
-    """).fetchall()
+    """, tuple(sessions_params)).fetchall()
 
     sessions_all = []
     project_totals = {}
@@ -356,6 +379,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
         sessions_all.append({
             "session_id":    r["session_id"][:8],
             "session_id_full": r["session_id"],
+            "provider":      r["provider"],
             "project":       project,
             "custom_name":   r["custom_name"] or "",
             "last":          _format_timestamp(r["last_timestamp"] or ""),
@@ -417,6 +441,7 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     conn.close()
 
     return {
+        "provider": provider,
         "all_models":      all_models,
         "daily_by_model":  daily_by_model,
         "hourly_by_model": hourly_by_model,
@@ -429,7 +454,40 @@ def get_dashboard_data(db_path=DB_PATH, local_tz=None):
     }
 
 
-def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH, local_tz=None):
+def get_providers_status(db_path=DB_PATH):
+    providers = {
+        "claude_code": {"provider": "claude_code", "available": True, "turns": 0, "sessions": 0},
+        "codex": {"provider": "codex", "available": bool(shutil.which("codex")), "turns": 0, "sessions": 0},
+    }
+    if not db_path.exists():
+        return {"providers": list(providers.values()), "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""
+            SELECT COALESCE(provider, 'claude_code') as provider,
+                   COUNT(*) as turns,
+                   COUNT(DISTINCT session_id) as sessions
+            FROM turns
+            GROUP BY COALESCE(provider, 'claude_code')
+        """).fetchall()
+        for row in rows:
+            key = row["provider"] or "claude_code"
+            if key not in providers:
+                providers[key] = {"provider": key, "available": True, "turns": 0, "sessions": 0}
+            providers[key]["turns"] = row["turns"] or 0
+            providers[key]["sessions"] = row["sessions"] or 0
+    finally:
+        conn.close()
+
+    return {
+        "providers": list(providers.values()),
+        "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+    }
+
+
+def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH, local_tz=None, provider="claude_code"):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado."}
     if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
@@ -438,13 +496,21 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     ensure_has_tool_marker_column(conn)
+    provider = _normalize_provider_filter(provider)
     try:
         model_filter = {m for m in (models or []) if m}
         cutoff_dt = _to_local_datetime(cutoff_ts, local_tz=local_tz) if cutoff_ts else None
 
+        where_clause = ""
+        params = []
+        if provider != "all":
+            where_clause = "WHERE COALESCE(t.provider, 'claude_code') = ?"
+            params.append(provider)
+
         rows = conn.execute("""
             SELECT
                 t.session_id as session_id,
+                COALESCE(t.provider, 'claude_code') as provider,
                 t.timestamp as timestamp,
                 COALESCE(t.model, 'unknown') as turn_model,
                 t.input_tokens as input_tokens,
@@ -454,8 +520,8 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
                 COALESCE(s.project_name, 'unknown') as project_name,
                 COALESCE(s.model, COALESCE(t.model, 'unknown')) as session_model
             FROM turns t
-            LEFT JOIN sessions s ON s.session_id = t.session_id
-        """).fetchall()
+            LEFT JOIN sessions s ON s.session_id = t.session_id AND COALESCE(s.provider, 'claude_code') = COALESCE(t.provider, 'claude_code')
+        """ + where_clause, tuple(params)).fetchall()
 
         session_acc = {}
         for r in rows:
@@ -481,6 +547,7 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
                 item = {
                     "session_id_full": sid,
                     "session_id": sid[:8],
+                    "provider": r["provider"] or "claude_code",
                     "custom_name": r["custom_name"] or "",
                     "project": _display_project_name(r["project_name"]),
                     "model": r["session_model"] or "unknown",
@@ -514,6 +581,7 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
             "cutoff": cutoff or "",
             "cutoff_ts": cutoff_ts or "",
             "models": sorted(model_filter),
+            "provider": provider,
             "sessions": sessions,
             "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         }
@@ -603,9 +671,10 @@ def find_transcript_path_for_session(session_id, db_path=DB_PATH):
     return None
 
 
-def get_session_history(session_id, db_path=DB_PATH):
+def get_session_history(session_id, db_path=DB_PATH, provider="claude_code"):
     if not session_id:
         return {"error": "É necessário informar um ID de sessão."}
+    provider = _normalize_provider_filter(provider)
 
     transcript_path = find_transcript_path_for_session(session_id, db_path=db_path)
     if not transcript_path:
@@ -662,8 +731,8 @@ def get_session_history(session_id, db_path=DB_PATH):
     try:
         ensure_custom_name_column(conn)
         row = conn.execute(
-            "SELECT custom_name FROM sessions WHERE session_id = ?",
-            (session_id,),
+            "SELECT custom_name FROM sessions WHERE session_id = ? " + ("" if provider == "all" else "AND COALESCE(provider, 'claude_code') = ?"),
+            (session_id,) if provider == "all" else (session_id, provider),
         ).fetchone()
         if row and row["custom_name"]:
             custom_name = row["custom_name"]
@@ -4094,6 +4163,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         handled = handle_get(self, parsed, {
             "HTML_TEMPLATE": HTML_TEMPLATE,
             "get_dashboard_data": get_dashboard_data,
+            "get_providers_status": get_providers_status,
             "get_sessions_for_hour": get_sessions_for_hour,
             "get_session_history": get_session_history,
             "render_hour_sessions_html": render_hour_sessions_html,
