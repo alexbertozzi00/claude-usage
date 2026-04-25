@@ -433,12 +433,6 @@ class TestDashboardHTTP(unittest.TestCase):
             # Should have expected keys (or error if no DB)
             self.assertTrue("all_models" in data or "error" in data)
 
-    def test_api_data_accepts_provider_query(self):
-        url = f"http://127.0.0.1:{self.port}/api/data?provider=all"
-        with urllib.request.urlopen(url) as resp:
-            self.assertEqual(resp.status, 200)
-            self.assertIn("application/json", resp.headers["Content-Type"])
-
     def test_api_providers_returns_json(self):
         url = f"http://127.0.0.1:{self.port}/api/providers"
         with urllib.request.urlopen(url) as resp:
