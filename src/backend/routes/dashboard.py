@@ -14,7 +14,19 @@ def handle_get(handler, parsed, deps):
         return True
 
     if parsed.path == "/api/data":
-        data = deps["get_dashboard_data"]()
+        qs = deps["parse_qs"](parsed.query or "")
+        provider = (qs.get("provider", ["claude_code"])[0] or "claude_code").strip().lower()
+        data = deps["get_dashboard_data"](provider=provider)
+        body = deps["json_dumps"](data).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return True
+
+    if parsed.path == "/api/providers":
+        data = deps["get_providers_status"]()
         body = deps["json_dumps"](data).encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "application/json")
@@ -30,7 +42,8 @@ def handle_get(handler, parsed, deps):
         cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
         models_raw = (qs.get("models", [""])[0] or "").strip()
         models = [m.strip() for m in models_raw.split(",") if m.strip()]
-        data = deps["get_sessions_for_hour"](hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models)
+        provider = (qs.get("provider", ["claude_code"])[0] or "claude_code").strip().lower()
+        data = deps["get_sessions_for_hour"](hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models, provider=provider)
         body = deps["render_hour_sessions_html"](data).encode("utf-8")
         handler.send_response(404 if "error" in data else 200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
@@ -41,7 +54,9 @@ def handle_get(handler, parsed, deps):
 
     if parsed.path.startswith("/session/"):
         session_id = unquote(parsed.path[len("/session/"):]).strip()
-        session_data = deps["get_session_history"](session_id)
+        qs = deps["parse_qs"](parsed.query or "")
+        provider = (qs.get("provider", ["claude_code"])[0] or "claude_code").strip().lower()
+        session_data = deps["get_session_history"](session_id, provider=provider)
         body = deps["render_session_history_html"](session_data).encode("utf-8")
         handler.send_response(404 if "error" in session_data else 200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")

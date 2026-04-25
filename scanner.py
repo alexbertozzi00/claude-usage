@@ -13,6 +13,7 @@ PROJECTS_DIR = Path.home() / ".claude" / "projects"
 XCODE_PROJECTS_DIR = Path.home() / "Library" / "Developer" / "Xcode" / "CodingAssistant" / "ClaudeAgentConfig" / "projects"
 DB_PATH = Path.home() / ".claude" / "usage.db"
 DEFAULT_PROJECTS_DIRS = [PROJECTS_DIR, XCODE_PROJECTS_DIR]
+DEFAULT_PROVIDER = "claude_code"
 
 
 def get_db(db_path=DB_PATH):
@@ -25,6 +26,7 @@ def init_db(conn):
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id      TEXT PRIMARY KEY,
+            provider        TEXT DEFAULT 'claude_code',
             project_name    TEXT,
             first_timestamp TEXT,
             last_timestamp  TEXT,
@@ -39,6 +41,7 @@ def init_db(conn):
 
         CREATE TABLE IF NOT EXISTS turns (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider                TEXT DEFAULT 'claude_code',
             session_id              TEXT,
             timestamp               TEXT,
             model                   TEXT,
@@ -62,6 +65,18 @@ def init_db(conn):
         CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp);
         CREATE INDEX IF NOT EXISTS idx_sessions_first ON sessions(first_timestamp);
     """)
+    # Add provider column to sessions if upgrading from older schema
+    try:
+        conn.execute("SELECT provider FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT DEFAULT 'claude_code'")
+        conn.execute("UPDATE sessions SET provider = 'claude_code' WHERE provider IS NULL OR provider = ''")
+    # Add provider column to turns if upgrading from older schema
+    try:
+        conn.execute("SELECT provider FROM turns LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE turns ADD COLUMN provider TEXT DEFAULT 'claude_code'")
+        conn.execute("UPDATE turns SET provider = 'claude_code' WHERE provider IS NULL OR provider = ''")
     # Add message_id column if upgrading from older schema
     try:
         conn.execute("SELECT message_id FROM turns LIMIT 1")
@@ -78,9 +93,15 @@ def init_db(conn):
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE sessions ADD COLUMN custom_name TEXT")
     # Conditional unique index: only dedup non-null message IDs
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_provider_timestamp ON turns(provider, timestamp)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_provider_model ON turns(provider, model)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_provider_session ON turns(provider, session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_provider_session ON sessions(provider, session_id)")
+    conn.execute("DROP INDEX IF EXISTS idx_turns_message_id")
     conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_message_id
-        ON turns(message_id) WHERE message_id IS NOT NULL AND message_id != ''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_provider_message_id
+        ON turns(provider, message_id)
+        WHERE message_id IS NOT NULL AND message_id != ''
     """)
     conn.commit()
 
@@ -98,7 +119,7 @@ def project_name_from_cwd(cwd):
     return parts[-1] if parts else "unknown"
 
 
-def parse_jsonl_file(filepath):
+def parse_jsonl_file(filepath, provider=DEFAULT_PROVIDER):
     """Parse a JSONL file and return (session_metas, turns, line_count).
 
     Deduplicates streaming events by message.id — Claude Code logs multiple
@@ -137,6 +158,7 @@ def parse_jsonl_file(filepath):
                 if session_id not in session_meta:
                     session_meta[session_id] = {
                         "session_id": session_id,
+                        "provider": provider,
                         "project_name": project_name_from_cwd(cwd),
                         "first_timestamp": timestamp,
                         "last_timestamp": timestamp,
@@ -184,6 +206,7 @@ def parse_jsonl_file(filepath):
 
                     turn = {
                         "session_id": session_id,
+                        "provider": provider,
                         "timestamp": timestamp,
                         "model": model,
                         "input_tokens": input_tokens,
@@ -243,22 +266,23 @@ def aggregate_sessions(session_metas, turns):
 
 def upsert_sessions(conn, sessions):
     for s in sessions:
+        provider = s.get("provider") or DEFAULT_PROVIDER
         # Check if session exists
         existing = conn.execute(
             "SELECT total_input_tokens, total_output_tokens, total_cache_read, "
-            "total_cache_creation, turn_count FROM sessions WHERE session_id = ?",
-            (s["session_id"],)
+            "total_cache_creation, turn_count FROM sessions WHERE session_id = ? AND provider = ?",
+            (s["session_id"], provider)
         ).fetchone()
 
         if existing is None:
             conn.execute("""
                 INSERT INTO sessions
-                    (session_id, project_name, first_timestamp, last_timestamp,
+                    (session_id, provider, project_name, first_timestamp, last_timestamp,
                      git_branch, total_input_tokens, total_output_tokens,
                      total_cache_read, total_cache_creation, model, turn_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                s["session_id"], s["project_name"], s["first_timestamp"],
+                s["session_id"], provider, s["project_name"], s["first_timestamp"],
                 s["last_timestamp"], s["git_branch"],
                 s["total_input_tokens"], s["total_output_tokens"],
                 s["total_cache_read"], s["total_cache_creation"],
@@ -275,24 +299,24 @@ def upsert_sessions(conn, sessions):
                     total_cache_creation = total_cache_creation + ?,
                     turn_count = turn_count + ?,
                     model = COALESCE(?, model)
-                WHERE session_id = ?
+                WHERE session_id = ? AND provider = ?
             """, (
                 s["last_timestamp"],
                 s["total_input_tokens"], s["total_output_tokens"],
                 s["total_cache_read"], s["total_cache_creation"],
                 s["turn_count"], s["model"],
-                s["session_id"]
+                s["session_id"], provider
             ))
 
 
 def insert_turns(conn, turns):
     conn.executemany("""
         INSERT OR IGNORE INTO turns
-            (session_id, timestamp, model, input_tokens, output_tokens,
+            (provider, session_id, timestamp, model, input_tokens, output_tokens,
              cache_read_tokens, cache_creation_tokens, has_tool_marker, tool_name, cwd, message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
-        (t["session_id"], t["timestamp"], t["model"],
+        (t.get("provider") or DEFAULT_PROVIDER, t["session_id"], t["timestamp"], t["model"],
          t["input_tokens"], t["output_tokens"],
          t["cache_read_tokens"], t["cache_creation_tokens"],
          t.get("has_tool_marker", 0), t["tool_name"], t["cwd"], t.get("message_id", ""))
@@ -300,7 +324,7 @@ def insert_turns(conn, turns):
     ])
 
 
-def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
+def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True, provider=DEFAULT_PROVIDER):
     conn = get_db(db_path)
     init_db(conn)
 
@@ -348,7 +372,7 @@ def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
 
         if is_new:
             # New file: full parse (single read, returns line count)
-            session_metas, turns, line_count = parse_jsonl_file(filepath)
+            session_metas, turns, line_count = parse_jsonl_file(filepath, provider=provider)
 
             if turns or session_metas:
                 sessions = aggregate_sessions(session_metas, turns)
@@ -395,6 +419,7 @@ def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
                         if session_id not in new_session_metas:
                             new_session_metas[session_id] = {
                                 "session_id": session_id,
+                                "provider": provider,
                                 "project_name": project_name_from_cwd(cwd),
                                 "first_timestamp": timestamp,
                                 "last_timestamp": timestamp,
@@ -436,6 +461,7 @@ def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
 
                             turn = {
                                 "session_id": session_id,
+                                "provider": provider,
                                 "timestamp": timestamp,
                                 "model": model,
                                 "input_tokens": input_tokens,
@@ -487,12 +513,13 @@ def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
     if new_files or updated_files:
         conn.execute("""
             UPDATE sessions SET
-                total_input_tokens = COALESCE((SELECT SUM(input_tokens) FROM turns WHERE turns.session_id = sessions.session_id), 0),
-                total_output_tokens = COALESCE((SELECT SUM(output_tokens) FROM turns WHERE turns.session_id = sessions.session_id), 0),
-                total_cache_read = COALESCE((SELECT SUM(cache_read_tokens) FROM turns WHERE turns.session_id = sessions.session_id), 0),
-                total_cache_creation = COALESCE((SELECT SUM(cache_creation_tokens) FROM turns WHERE turns.session_id = sessions.session_id), 0),
-                turn_count = COALESCE((SELECT COUNT(*) FROM turns WHERE turns.session_id = sessions.session_id), 0)
-        """)
+                total_input_tokens = COALESCE((SELECT SUM(input_tokens) FROM turns WHERE turns.session_id = sessions.session_id AND turns.provider = sessions.provider), 0),
+                total_output_tokens = COALESCE((SELECT SUM(output_tokens) FROM turns WHERE turns.session_id = sessions.session_id AND turns.provider = sessions.provider), 0),
+                total_cache_read = COALESCE((SELECT SUM(cache_read_tokens) FROM turns WHERE turns.session_id = sessions.session_id AND turns.provider = sessions.provider), 0),
+                total_cache_creation = COALESCE((SELECT SUM(cache_creation_tokens) FROM turns WHERE turns.session_id = sessions.session_id AND turns.provider = sessions.provider), 0),
+                turn_count = COALESCE((SELECT COUNT(*) FROM turns WHERE turns.session_id = sessions.session_id AND turns.provider = sessions.provider), 0)
+            WHERE provider = ?
+        """, (provider,))
         conn.commit()
 
     if verbose:
