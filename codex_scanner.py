@@ -56,31 +56,82 @@ def _to_int(value):
         return 0
 
 
-def _extract_event(record, *, source_path):
+def _find_dict_with_keys(data, required_keys):
+    """Depth-first search for a dict containing all required keys."""
+    if isinstance(data, dict):
+        if all(key in data for key in required_keys):
+            return data
+        for value in data.values():
+            found = _find_dict_with_keys(value, required_keys)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_dict_with_keys(item, required_keys)
+            if found is not None:
+                return found
+    return None
+
+
+def _extract_rollout_context(record):
+    """Extract session/model defaults from Codex rollout lines."""
+    if not isinstance(record, dict):
+        return {}
+
+    session_id = (
+        record.get("session_id")
+        or record.get("sessionId")
+        or _nested_get(record, ["item", "session_id"])
+        or _nested_get(record, ["item", "sessionId"])
+        or _nested_get(record, ["item", "id"])
+        or _nested_get(record, ["payload", "session_id"])
+        or _nested_get(record, ["payload", "sessionId"])
+    )
+    model = (
+        _nested_get(record, ["message", "model"], "")
+        or record.get("model")
+        or _nested_get(record, ["item", "model"])
+        or _nested_get(record, ["item", "default_model"])
+        or _nested_get(record, ["payload", "model"])
+        or _nested_get(record, ["payload", "default_model"])
+    )
+    return {"session_id": session_id, "model": model}
+
+
+def _extract_event(record, *, source_path, session_id_default=None, model_default=None):
     if not isinstance(record, dict):
         return None
 
     usage = _nested_get(record, ["message", "usage"], {}) if isinstance(_nested_get(record, ["message", "usage"], {}), dict) else {}
+    rollout_usage = _find_dict_with_keys(record, {"input_tokens", "output_tokens"}) or {}
 
     input_tokens = _to_int(
         usage.get("input_tokens")
         or record.get("input_tokens")
+        or rollout_usage.get("input_tokens")
         or record.get("prompt_tokens")
         or record.get("input")
     )
     output_tokens = _to_int(
         usage.get("output_tokens")
         or record.get("output_tokens")
+        or rollout_usage.get("output_tokens")
         or record.get("completion_tokens")
         or record.get("output")
     )
     cache_read = _to_int(
         usage.get("cache_read_input_tokens")
+        or record.get("cache_read_input_tokens")
         or record.get("cache_read_tokens")
+        or rollout_usage.get("cache_read_input_tokens")
+        or rollout_usage.get("cache_read_tokens")
     )
     cache_creation = _to_int(
         usage.get("cache_creation_input_tokens")
+        or record.get("cache_creation_input_tokens")
         or record.get("cache_creation_tokens")
+        or rollout_usage.get("cache_creation_input_tokens")
+        or rollout_usage.get("cache_creation_tokens")
     )
 
     if input_tokens + output_tokens + cache_read + cache_creation == 0:
@@ -96,11 +147,13 @@ def _extract_event(record, *, source_path):
             record.get("session_id")
             or record.get("sessionId")
             or record.get("conversation_id")
+            or session_id_default
             or "codex-unknown-session"
         ),
         model=(
             _nested_get(record, ["message", "model"], "")
             or record.get("model")
+            or model_default
             or "codex-unknown-model"
         ),
         input_tokens=input_tokens,
@@ -139,6 +192,8 @@ def _parse_json_file(path):
 def _parse_jsonl_file(path):
     events = []
     errors = []
+    current_session_id = None
+    current_model = None
     try:
         with path.open(encoding="utf-8", errors="replace") as f:
             for idx, line in enumerate(f, 1):
@@ -150,7 +205,18 @@ def _parse_jsonl_file(path):
                 except json.JSONDecodeError:
                     errors.append(f"{path}:{idx}: linha JSON inválida")
                     continue
-                event = _extract_event(record, source_path=path)
+                context = _extract_rollout_context(record)
+                if context.get("session_id"):
+                    current_session_id = context["session_id"]
+                if context.get("model"):
+                    current_model = context["model"]
+
+                event = _extract_event(
+                    record,
+                    source_path=path,
+                    session_id_default=current_session_id,
+                    model_default=current_model,
+                )
                 if event:
                     events.append(event)
     except Exception as exc:
