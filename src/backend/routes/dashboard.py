@@ -39,11 +39,12 @@ def handle_get(handler, parsed, deps):
         hour = unquote(parsed.path[len("/hour/"):]).strip()[:2]
         qs = deps["parse_qs"](parsed.query or "")
         cutoff = (qs.get("cutoff", [""])[0] or "").strip() or None
+        cutoff_end = (qs.get("cutoff_end", [""])[0] or "").strip() or None
         cutoff_ts = (qs.get("cutoff_ts", [""])[0] or "").strip() or None
         models_raw = (qs.get("models", [""])[0] or "").strip()
         models = [m.strip() for m in models_raw.split(",") if m.strip()]
         provider = (qs.get("provider", ["claude_code"])[0] or "claude_code").strip().lower()
-        data = deps["get_sessions_for_hour"](hour, cutoff=cutoff, cutoff_ts=cutoff_ts, models=models, provider=provider)
+        data = deps["get_sessions_for_hour"](hour, cutoff=cutoff, cutoff_end=cutoff_end, cutoff_ts=cutoff_ts, models=models, provider=provider)
         body = deps["render_hour_sessions_html"](data).encode("utf-8")
         handler.send_response(404 if "error" in data else 200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")

@@ -147,6 +147,18 @@ class TestGetDashboardData(unittest.TestCase):
         self.assertEqual(len(data["sessions"]), 1)
         self.assertEqual(data["sessions"][0]["session_id_full"], "sess-abc123")
 
+    def test_get_sessions_for_hour_respects_cutoff_end(self):
+        data = get_sessions_for_hour(
+            "09",
+            cutoff="2026-04-01",
+            cutoff_end="2026-04-07",
+            models=["claude-sonnet-4-6"],
+            db_path=self.db_path,
+        )
+        self.assertNotIn("error", data)
+        self.assertEqual(data["cutoff_end"], "2026-04-07")
+        self.assertEqual(data["sessions"], [])
+
     def test_get_sessions_for_hour_with_timestamp_cutoff(self):
         data = get_sessions_for_hour(
             "09",

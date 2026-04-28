@@ -487,7 +487,7 @@ def get_providers_status(db_path=DB_PATH):
     }
 
 
-def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_path=DB_PATH, local_tz=None, provider="claude_code"):
+def get_sessions_for_hour(hour, cutoff=None, cutoff_end=None, cutoff_ts=None, models=None, db_path=DB_PATH, local_tz=None, provider="claude_code"):
     if not db_path.exists():
         return {"error": "Banco de dados não encontrado."}
     if hour is None or len(str(hour)) != 2 or not str(hour).isdigit():
@@ -536,6 +536,8 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
                 continue
             if cutoff and local_dt.strftime("%Y-%m-%d") < cutoff:
                 continue
+            if cutoff_end and local_dt.strftime("%Y-%m-%d") > cutoff_end:
+                continue
             if cutoff_dt and local_dt < cutoff_dt:
                 continue
             if model_filter and (r["turn_model"] or "unknown") not in model_filter:
@@ -579,6 +581,7 @@ def get_sessions_for_hour(hour, cutoff=None, cutoff_ts=None, models=None, db_pat
         return {
             "hour": hour,
             "cutoff": cutoff or "",
+            "cutoff_end": cutoff_end or "",
             "cutoff_ts": cutoff_ts or "",
             "models": sorted(model_filter),
             "provider": provider,
@@ -1220,9 +1223,12 @@ def render_hour_sessions_html(data):
 
     hour = escape(f"{data.get('hour', '00')}:00")
     cutoff = escape(data.get("cutoff") or "início")
+    cutoff_end = escape(data.get("cutoff_end") or "")
     cutoff_ts = (data.get("cutoff_ts") or "").strip()
     if cutoff_ts:
         cutoff = escape(_format_timestamp(cutoff_ts))
+    elif cutoff_end and cutoff_end != cutoff:
+        cutoff = f"{cutoff} ate {cutoff_end}"
     models = data.get("models") or []
     provider = (data.get("provider") or "claude_code").strip()
     provider_label = "Claude" if provider == "claude_code" else ("Codex" if provider == "codex" else "Todos")
@@ -2065,6 +2071,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="filter-label">Período</div>
   <div class="range-group">
     <button class="range-btn" data-range="1d"  onclick="setRange('1d')">Hoje</button>
+    <button class="range-btn" data-range="yesterday" onclick="setRange('yesterday')">Ontem</button>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
@@ -2474,13 +2481,27 @@ const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6
 // ── Time range ─────────────────────────────────────────────────────────────
 const RANGE_LABELS = {
   '1d': 'Hoje',
+  'yesterday': 'Ontem',
   '7d': 'Últimos 7 dias',
   '30d': 'Últimos 30 dias',
   '90d': 'Últimos 90 dias',
   '180d': 'Últimos 6 meses',
   'all': 'Período completo',
 };
-const RANGE_TICKS  = { '1d': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
+const RANGE_TICKS  = { '1d': 6, 'yesterday': 6, '7d': 7, '30d': 15, '90d': 13, '180d': 16, 'all': 12 };
+
+function formatLocalDate(offsetDays = 0) {
+  const dt = new Date();
+  dt.setDate(dt.getDate() + offsetDays);
+  const year = dt.getFullYear();
+  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isSingleDayRange(range) {
+  return range === '1d' || range === 'yesterday';
+}
 
 function getLatestDataDay() {
   if (!rawData) return null;
@@ -2491,10 +2512,10 @@ function getLatestDataDay() {
   return allDays.reduce((max, d) => (d > max ? d : max), allDays[0]);
 }
 
-function getRangeDayCount(cutoff) {
+function getRangeDayCount(cutoff, endDayOverride = null) {
   const latestDataDay = getLatestDataDay();
   if (!latestDataDay) return 1;
-  const end = new Date(latestDataDay + 'T00:00:00Z');
+  const end = new Date((endDayOverride || latestDataDay) + 'T00:00:00Z');
 
   let start = null;
   if (cutoff) {
@@ -2518,11 +2539,10 @@ function getRangeCutoff(range) {
   // "Hoje": usar o dia corrente local do cliente.
   // Isso evita puxar sessões antigas quando não houve uso hoje.
   if (range === '1d') {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatLocalDate();
+  }
+  if (range === 'yesterday') {
+    return formatLocalDate(-1);
   }
   const daysByRange = { '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
   const days = daysByRange[range] || 30;
@@ -2539,12 +2559,21 @@ function getRangeTimestampCutoff(range) {
   return null;
 }
 
-function fillMissingDailyDays(rows, cutoffDay = null) {
+function getRangeEnd(range) {
+  if (range === 'yesterday') return getRangeCutoff(range);
+  return null;
+}
+
+function isWithinDayRange(day, cutoff, cutoffEnd = null) {
+  return Boolean(day) && (!cutoff || day >= cutoff) && (!cutoffEnd || day <= cutoffEnd);
+}
+
+function fillMissingDailyDays(rows, cutoffDay = null, endDayOverride = null) {
   const dayMap = new Map((rows || []).map(r => [r.day, r]));
 
   const latestDataDay = getLatestDataDay();
   const startDay = cutoffDay || (rows && rows.length ? rows[0].day : null);
-  const endDay = latestDataDay || (rows && rows.length ? rows[rows.length - 1].day : null);
+  const endDay = endDayOverride || latestDataDay || (rows && rows.length ? rows[rows.length - 1].day : null);
   if (!startDay || !endDay) return rows || [];
 
   const start = new Date(startDay + 'T00:00:00Z');
@@ -2565,7 +2594,7 @@ function fillMissingDailyDays(rows, cutoffDay = null) {
 function readURLRange() {
   const p = new URLSearchParams(window.location.search).get('range');
   if (p === '24h') return '1d';
-  return ['1d', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
+  return ['1d', 'yesterday', '7d', '30d', '90d', '180d', 'all'].includes(p) ? p : '30d';
 }
 
 function readURLProvider() {
@@ -2870,15 +2899,16 @@ function applyFilter() {
   if (!rawData) return;
 
   const cutoff = getRangeCutoff(selectedRange);
+  const cutoffEnd = getRangeEnd(selectedRange);
   const cutoffTs = getRangeTimestampCutoff(selectedRange);
 
   const filteredHourly = (rawData.hourly_by_model || []).filter(r => {
     if (!selectedModels.has(r.model)) return false;
-    return !cutoff || r.day >= cutoff;
+    return isWithinDayRange(r.day, cutoff, cutoffEnd);
   });
 
   const filteredDaily = rawData.daily_by_model.filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+    selectedModels.has(r.model) && isWithinDayRange(r.day, cutoff, cutoffEnd)
   );
 
   // Daily chart: aggregate by day
@@ -2892,7 +2922,7 @@ function applyFilter() {
     d.cache_creation += r.cache_creation;
   }
   const aggregatedDaily = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
-  const daily = showEmptyDays ? fillMissingDailyDays(aggregatedDaily, cutoff) : aggregatedDaily;
+  const daily = showEmptyDays ? fillMissingDailyDays(aggregatedDaily, cutoff, cutoffEnd) : aggregatedDaily;
   const hourlyTokenRows = buildHourlyTokenRows(filteredHourly, cutoff);
   const hourly = buildHourlyTrendRows(filteredHourly, cutoff);
 
@@ -2911,7 +2941,7 @@ function applyFilter() {
   // Filter sessions by model + date range
   const filteredSessions = rawData.sessions_all.filter(s => {
     if (!selectedModels.has(s.model)) return false;
-    return !cutoff || s.last_date >= cutoff;
+    return isWithinDayRange(s.last_date, cutoff, cutoffEnd);
   });
 
   // Add session counts into modelMap
@@ -2923,7 +2953,7 @@ function applyFilter() {
 
   // By project: aggregate from per-day rows (avoids counting full session totals outside selected range)
   const filteredProjectDaily = (rawData.project_daily || []).filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+    selectedModels.has(r.model) && isWithinDayRange(r.day, cutoff, cutoffEnd)
   );
 
   const projMap = {};
@@ -2988,19 +3018,19 @@ function applyFilter() {
     : null;
 
   // Update daily chart title
-  document.getElementById('daily-chart-title').textContent = (selectedRange === '1d'
+  document.getElementById('daily-chart-title').textContent = (isSingleDayRange(selectedRange)
     ? 'Uso por Hora de Tokens'
     : 'Uso Diário de Tokens') + ' \u2014 ' + getSelectedRangeLabel();
 
   renderStats(totals);
-  renderBillingWindows(cutoff);
+  renderBillingWindows(cutoff, cutoffEnd);
   renderInsights(totals, byModel, byProject, peakDay, lowDay);
-  renderDailyChart(selectedRange === '1d' ? hourlyTokenRows : daily, selectedRange === '1d' ? 'hourly' : 'daily');
+  renderDailyChart(isSingleDayRange(selectedRange) ? hourlyTokenRows : daily, isSingleDayRange(selectedRange) ? 'hourly' : 'daily');
   updateTrendChartVisibility();
-  renderTrendChart(selectedRange === '1d' ? hourly : daily, selectedRange === '1d' ? 'hourly' : 'daily');
+  renderTrendChart(isSingleDayRange(selectedRange) ? hourly : daily, isSingleDayRange(selectedRange) ? 'hourly' : 'daily');
   renderModelChart(byModel);
   renderProjectChart(byProject);
-  renderHourlyActivity(filteredHourly, cutoff, cutoffTs);
+  renderHourlyActivity(filteredHourly, cutoff, cutoffTs, cutoffEnd);
   lastFilteredSessions = sortSessions(filteredSessions);
   lastRankingSessions = sortRankingSessions(rankingSessions);
   lastByProject = sortProjects(byProject);
@@ -3037,12 +3067,12 @@ function renderStats(t) {
 }
 
 // ── Billing Windows ────────────────────────────────────────────────────────
-function renderBillingWindows(cutoff) {
+function renderBillingWindows(cutoff, cutoffEnd = null) {
   const allWindows = (rawData && rawData.billing_windows) ? rawData.billing_windows : [];
 
   // Filter by selected date range: compare window_start_iso date part vs cutoff
   const filtered = cutoff
-    ? allWindows.filter(w => w.window_start_iso.slice(0, 10) >= cutoff)
+    ? allWindows.filter(w => isWithinDayRange(w.window_start_iso.slice(0, 10), cutoff, cutoffEnd))
     : allWindows;
 
   // Sort descending (most recent first)
@@ -3141,7 +3171,7 @@ function renderBillingWindows(cutoff) {
 
 function setBillingWindowsPage(nextPage) {
   billingWindowsPage = nextPage;
-  renderBillingWindows(getRangeCutoff(selectedRange));
+  renderBillingWindows(getRangeCutoff(selectedRange), getRangeEnd(selectedRange));
 }
 
 function renderBillingWindowsPager(paged) {
@@ -3410,7 +3440,7 @@ function renderProjectChart(byProject) {
   });
 }
 
-function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
+function renderHourlyActivity(hourlyRows, cutoff, cutoffTs, cutoffEnd = null) {
   const container = document.getElementById('hourly-activity-list');
   const meta = document.getElementById('hourly-activity-meta');
   if (!container) return;
@@ -3428,7 +3458,7 @@ function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
     base[idx].tokens += (row.input || 0) + (row.output || 0);
   }
 
-  const dayCount = getRangeDayCount(cutoff);
+  const dayCount = getRangeDayCount(cutoff, cutoffEnd);
   const withAverages = base.map(r => ({
     ...r,
     avgTurns: r.turns / dayCount,
@@ -3442,9 +3472,10 @@ function renderHourlyActivity(hourlyRows, cutoff, cutoffTs) {
 
   const selectedModelsParam = encodeURIComponent(Array.from(selectedModels).join(','));
   const cutoffParam = encodeURIComponent(cutoff || '');
+  const cutoffEndParam = encodeURIComponent(cutoffEnd || '');
   const cutoffTsParam = encodeURIComponent(cutoffTs || '');
   const providerParam = encodeURIComponent(selectedProvider || 'claude_code');
-  const buildHourURL = (hour) => `/hour/${hour}?provider=${providerParam}&cutoff=${cutoffParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
+  const buildHourURL = (hour) => `/hour/${hour}?provider=${providerParam}&cutoff=${cutoffParam}&cutoff_end=${cutoffEndParam}&cutoff_ts=${cutoffTsParam}&models=${selectedModelsParam}`;
 
   container.innerHTML = withAverages.map(r => {
     const widthPct = (r.avgTokens / maxTokens) * 100;
@@ -3776,6 +3807,7 @@ function isoDateAddDays(isoDate, deltaDays) {
 function resolveExportPeriod() {
   const latestDay = getLatestDataDay() || new Date().toISOString().slice(0, 10);
   const cutoff = getRangeCutoff(selectedRange);
+  const cutoffEnd = getRangeEnd(selectedRange);
   let start = cutoff;
   if (!start) {
     const fromSessions = (rawData?.sessions_all || []).map(s => s.last_date).filter(Boolean);
@@ -3783,8 +3815,8 @@ function resolveExportPeriod() {
     const allDays = fromSessions.concat(fromDaily);
     start = allDays.length ? allDays.reduce((min, d) => (d < min ? d : min), allDays[0]) : latestDay;
   }
-  const end = latestDay;
-  const dayCount = getRangeDayCount(cutoff);
+  const end = cutoffEnd || latestDay;
+  const dayCount = getRangeDayCount(cutoff, cutoffEnd);
   const previousEnd = isoDateAddDays(start, -1);
   const previousStart = isoDateAddDays(previousEnd, -(dayCount - 1));
   return {
